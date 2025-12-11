@@ -1,0 +1,7 @@
+.downloaded_dataset_zip/
+.prior_models/
+src_betr/checkpoints/
+datasets/
+__pycache__/
+*.py[cod]
+test/
