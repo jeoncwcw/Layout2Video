@@ -90,22 +90,18 @@ class DA3FeatureExtractor:
     def __call__(
         self,
         imgs: torch.Tensor,
-        process_res: int = 448,
     ) -> torch.Tensor:
         """
         Args:
             images: file paths or preloaded numpy/PIL
-            process_res: processing resolution
         Returns:
             Depth tensor on device shaped (N, 1, H, W) with no CPU/numpy conversion.
         """
 
-        imgs = imgs.unsqueeze(1).device(self.device)  # (N, 1, H, W)
-        breakpoint()
+        imgs = imgs.unsqueeze(1).to(self.device)  # (N, 1, H, W)
 
         with torch.inference_mode():
             raw = self.model(imgs, None, None, [])
-        breakpoint()
         depth = raw.depth.squeeze(0)  # (N, H, W)
         if depth.dim() == 3:
             depth = depth.unsqueeze(1)  # (N, 1, H, W)
@@ -206,7 +202,7 @@ class DINOv3FeatureExtractor:
         with torch.inference_mode():
             feat_dict = self.model.forward_features(batch)
             patch_tokens = feat_dict["x_norm_patchtokens"]  # (B, N, C)
-            breakpoint()
+
 
         h_tokens = batch.shape[-2] // patch_h
         w_tokens = batch.shape[-1] // patch_w
@@ -218,7 +214,6 @@ class DINOv3FeatureExtractor:
         patch_grid = patch_tokens.reshape(
             patch_tokens.shape[0], h_tokens, w_tokens, patch_tokens.shape[-1]
         ).permute(0, 3, 1, 2)
-        breakpoint()
 
         return patch_grid
 
