@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Sequence, List, Dict
 
 import numpy as np
 from PIL import Image
@@ -61,11 +61,12 @@ class ImageFolderDataset(Dataset):
     def __init__(
         self,
         root_dir: str | Path,
-        *,
-        extensions: Sequence[str] = DEFAULT_EXTENSIONS,
+        labels: List[Dict],
+        bbx_2d: List,
         transform_da3: Callable[[Image.Image], torch.Tensor],
         transform_dino: Callable[[Image.Image], torch.Tensor],
         recursive: bool = True,
+        extensions: Sequence[str] = DEFAULT_EXTENSIONS,
     ) -> None:
         self.root = Path(root_dir).expanduser()
         if not self.root.exists():
@@ -97,11 +98,11 @@ class ImageFolderDataset(Dataset):
         image = Image.open(img_path).convert("RGB")
         image_da3 = self.transform_da3(image)
         image_dino = self.transform_dino(image)
-        return {"image_da3": image_da3, "image_dino": image_dino, "path": str(img_path)}
+        return {"image_da3": image_da3, "image_dino": image_dino, "path": str(img_path), "2d_bbx": None, "Label": None}
 
 
 def build_image_dataloader(
-    data_dir: str | Path,
+    json_lists: Path,
     *,
     batch_size: int = 8,
     da3_image_size: int = 448,

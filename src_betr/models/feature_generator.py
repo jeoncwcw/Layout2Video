@@ -12,21 +12,23 @@ class FeatureGenerator(nn.Module):
     def __init__(self):
         super(FeatureGenerator, self).__init__()
         # Initialize layers or parameters here
-        self.patchify_conv = nn.Conv2d(
+        self.patchify_conv_mono = nn.Conv2d(
             in_channels=1,
             out_channels=512,
             kernel_size=14,
             stride=14,
         )
+        self.patchify_conv_metric = nn.Conv2d(
+            in_channels=1,
+            out_channels=512,
+            kernel_size=14,
+            stride=14,
+        )
+        self.norm_metric = nn.InstanceNorm2d(1, affine=True)
+        self.norm_mono = nn.InstanceNorm2d(1, affine=True)
     def forward(self, o_metric, o_mono, o_dino3):
-        print("o_metric max value:", o_metric.max().item())
-        print("o_mono max value:", o_mono.max().item())
-        print("o_dino3 max value:", o_dino3.max().item())
-        print("o_metric min value:", o_metric.min().item())
-        print("o_mono min value:", o_mono.min().item())
-        print("o_dino3 min value:", o_dino3.min().item())
-        patchified_metric = self.patchify_conv(o_metric)
-        patchified_mono = self.patchify_conv(o_mono)
+        patchified_metric = self.patchify_conv_metric(self.norm_metric(torch.log1p(o_metric)))
+        patchified_mono = self.patchify_conv_mono(self.norm_mono(o_mono))
         da3_features = torch.concat([patchified_metric, patchified_mono], dim=1)
         combined_features = torch.concat([da3_features, o_dino3], dim=1)
         return combined_features
