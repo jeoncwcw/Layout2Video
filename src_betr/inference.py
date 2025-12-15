@@ -8,13 +8,13 @@ from models.feature_extractor import DA3FeatureExtractor, DINOv3FeatureExtractor
 import torch
 
 if __name__ == "__main__":
-    ROOT = Path(__file__).resolve().parents[1]
+    ROOT = Path(__file__).resolve().parents[0]
     checkpoint_dir, cfg_dir = str(ROOT / "checkpoints"), str(ROOT / "configs")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloader = build_image_dataloader(
-        root_dir=Path(""),
-        data_dir=Path(""),
+        root_dir=Path("/home/vmg/Desktop/layout2video/datasets/L2V/labeled"),
+        data_dir=Path("/home/vmg/Desktop/layout2video/datasets"),
         split="test",
         batch_size=2,
         num_workers=2,
