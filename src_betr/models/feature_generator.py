@@ -33,16 +33,7 @@ class FeatureGenerator(nn.Module):
         combined_features = torch.concat([da3_features, o_dino3], dim=1)
         return combined_features
     
-def running_feature_generator():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataset_root = str(Path(__file__).resolve().parents[2] / "datasets" / "KITTI_object" / "testing" / "image_2")
-    dataloader = build_image_dataloader(
-        data_dir=dataset_root,
-        batch_size=2,
-        da3_image_size=448,
-        dino_image_size=512,
-        num_workers=0,
-    )
+def running_feature_generator(device: torch.device, dataloader: torch.utils.data.DataLoader) -> torch.Tensor:
     checkpoint_root = str(Path(__file__).resolve().parents[1] / "checkpoints")
     cfg_root = str(Path(__file__).resolve().parents[1] / "configs")
     for batch in dataloader:
@@ -71,8 +62,4 @@ def running_feature_generator():
         feature_generator.eval()
         with torch.no_grad():
             output_features = feature_generator(o_metric, o_mono, o_dino3)
-        print("Output feature shape:", output_features.shape)
-        break
-    
-if __name__ == "__main__":
-    running_feature_generator()
+        return output_features

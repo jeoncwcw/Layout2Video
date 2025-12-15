@@ -83,7 +83,7 @@ class AnnotationDataset(Dataset):
                 self.ann_list.append({
                     "image_id": obj["image_id"],
                     "2d_bbx": obj["bbox2D_tight"],
-                    "3d_bb8": self._convert_projected_corners(obj["bbox3D_projected_corners"]),
+                    "3d_bb8": self._convert_projected_corners(obj["projected_corners"]),
                     "quality": obj["quality"],
                     "depth": obj["depth"],
                 })
@@ -93,7 +93,7 @@ class AnnotationDataset(Dataset):
         return torch.tensor(coords, dtype=torch.float32)
 
     def __len__(self) -> int:
-        return len(self.paths)
+        return len(self.ann_list)
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor | str]:
         ann_data = self.ann_list[index]
@@ -159,7 +159,6 @@ def build_image_dataloader(
     num_workers: int = 4,
     pin_memory: bool = True,
     drop_last: bool = False,
-    recursive: bool = True,
 ) -> DataLoader:
     """
     Create a DataLoader from a directory that only contains images.
@@ -184,11 +183,13 @@ def build_image_dataloader(
 
 if __name__ == "__main__":
     # Example: iterate over a folder full of images
-    sample_root = Path("datasets/KITTI_object/testing/image_2")
-    loader = build_image_dataloader(sample_root, batch_size=2, da3_image_size=448, dino_image_size=512, num_workers=0)
+    sample_root = Path("/home/vmg/Desktop/layout2video/datasets/L2V/labeled")
+    data_root = Path("/home/vmg/Desktop/layout2video/datasets")
+    loader = build_image_dataloader(sample_root, data_root, split="val",batch_size=2, da3_image_size=448, dino_image_size=512, num_workers=0)
     batch = next(iter(loader))
     print("Batch DA3 image tensor shape:", batch["image_da3"].shape)
     print("Batch DINO image tensor shape:", batch["image_dino"].shape)
     print("Batch file paths:", batch["path"])
     print("min/max DA3 image pixel values:", batch["image_da3"].min().item(), batch["image_da3"].max().item())
     print("min/max DINO image pixel values:", batch["image_dino"].min().item(), batch["image_dino"].max().item())
+    print("length of dataset:",len(loader.dataset))
