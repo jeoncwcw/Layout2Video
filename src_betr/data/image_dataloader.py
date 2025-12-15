@@ -127,21 +127,21 @@ class AnnotationDataset(Dataset):
         center_metric_depth = raw_depths.mean()
 
         min_depth, max_depth = 0.1, 3000.0
-        ceter_depth_clamped = torch.clamp(center_metric_depth, min=min_depth, max=max_depth)
-        inv_depth = 1.0 / ceter_depth_clamped
+        center_depth_clamped = torch.clamp(center_metric_depth, min=min_depth, max=max_depth)
+        inv_depth = 1.0 / center_depth_clamped
         inv_min = 1.0 / max_depth
         inv_max = 1.0 / min_depth
         norm_inv_depth = (inv_depth - inv_min) / (inv_max - inv_min)
 
         raw_depth_clamped = torch.clamp(raw_depths, min=min_depth, max=max_depth)
-        depth_offsets = torch.log(raw_depth_clamped) - torch.log(ceter_depth_clamped)
+        depth_offsets = torch.log(raw_depth_clamped) - torch.log(center_depth_clamped)
         
 
         return {
             "image_da3": image_da3, "image_dino": image_dino, "path": str(img_path), 
             "2d_bbx": bbx2d_processed, "quality": ann_data["quality"],
             ## GT infos
-            "gt_center": bbx3d_center, "gt_offsets_3d": offsets_3d, "gt_corners_3d": bbx3d_bb8,
+            "gt_center": bbx3d_center, "gt_offsets_3d": offsets_3d.flatten(), "gt_corners_3d": bbx3d_bb8,
             "gt_center_depth": norm_inv_depth, "gt_depth_offsets": depth_offsets,
             "meta_depth_min": min_depth, "meta_depth_max": max_depth, "gt_metric_depth": center_metric_depth,
             }
