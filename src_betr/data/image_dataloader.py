@@ -8,6 +8,7 @@ from PIL import Image
 import torch
 from torch.utils.data import DataLoader, Dataset
 import cv2
+import json
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -53,57 +54,104 @@ def _default_transform(image_size: int) -> Callable[[Image.Image], torch.Tensor]
     return transform
 
 
-class ImageFolderDataset(Dataset):
+class AnnotationDataset(Dataset):
     """
     Minimal dataset that collects every image file under a root directory.
     """
 
     def __init__(
         self,
+        json_data: List[Dict],
         root_dir: str | Path,
-        labels: List[Dict],
-        bbx_2d: List,
         transform_da3: Callable[[Image.Image], torch.Tensor],
         transform_dino: Callable[[Image.Image], torch.Tensor],
-        recursive: bool = True,
-        extensions: Sequence[str] = DEFAULT_EXTENSIONS,
     ) -> None:
         self.root = Path(root_dir).expanduser()
         if not self.root.exists():
             raise FileNotFoundError(f"Dataset root does not exist: {self.root}")
-        if not extensions:
-            raise ValueError("extensions must contain at least one suffix.")
-        self.extensions = tuple(ext.lower() for ext in extensions)
         self.transform_da3 = transform_da3
         self.transform_dino = transform_dino
-        self.paths = self._gather_files(recursive)
-        if not self.paths:
-            raise ValueError(f"No images with extensions {self.extensions} found in {self.root}")
 
-    def _gather_files(self, recursive: bool) -> list[Path]:
-        pattern = "**/*" if recursive else "*"
-        files = [
-            path
-            for path in self.root.glob(pattern)
-            if path.is_file() and path.suffix.lower() in self.extensions
-        ]
-        files.sort()
-        return files
+        self.ann_list = []
+        self.image_map = {}
+
+        for data in json_data:
+            for img_info in data["images"]:
+                img_path = self.root / img_info["file_path"]
+                self.image_map[img_info["id"]] = {"path": img_path, "info": img_info}
+            for obj in data["annotations"]:
+                self.ann_list.append({
+                    "image_id": obj["image_id"],
+                    "2d_bbx": obj["bbox2D_tight"],
+                    "3d_bb8": self._convert_projected_corners(obj["bbox3D_projected_corners"]),
+                    "quality": obj["quality"],
+                    "depth": obj["depth"],
+                })
+
+    def _convert_projected_corners(self, corners_list: List[Dict]):
+        coords = [(float(c["u"]), float(c["v"])) for c in corners_list]
+        return torch.tensor(coords, dtype=torch.float32)
 
     def __len__(self) -> int:
         return len(self.paths)
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor | str]:
-        img_path = self.paths[index]
+        ann_data = self.ann_list[index]
+        img_id = ann_data["image_id"]
+        img_info = self.image_map[img_id]
+        img_path = img_info["path"]
         image = Image.open(img_path).convert("RGB")
+
         image_da3 = self.transform_da3(image)
         image_dino = self.transform_dino(image)
-        return {"image_da3": image_da3, "image_dino": image_dino, "path": str(img_path), "2d_bbx": None, "Label": None}
+
+        bbx2d_orig = np.array(ann_data["2d_bbx"], dtype=np.float32)
+        longest = max(image.width, image.height)
+        scale = 512 / float(longest) # DINO size is always 512
+        new_w, new_h = int(round(image.width * scale)), int(round(image.height * scale))
+        pad_left, pad_top = (512 - new_w) // 2, (512 - new_h) // 2
+        bbx2d_processed = bbx2d_orig * scale
+        bbx2d_processed[[0, 2]] += pad_left
+        bbx2d_processed[[1, 3]] += pad_top
+        bbx2d_processed = torch.tensor(bbx2d_processed, dtype=torch.float32) / 512.0
+
+        bbx3d_bb8 = ann_data["3d_bb8"] * scale
+        bbx3d_bb8[:, 0] += pad_left
+        bbx3d_bb8[:, 1] += pad_top
+        bbx3d_bb8 = bbx3d_bb8 / 512.0
+        bbx3d_center = bbx3d_bb8.mean(dim=0)
+        offsets_3d = bbx3d_bb8 - bbx3d_center.unsqueeze(0)
+
+        # depth (Metric to Stable Monodepth Style)
+        raw_depths = torch.tensor(ann_data["depth"], dtype=torch.float32)
+        center_metric_depth = raw_depths.mean()
+
+        min_depth, max_depth = 0.1, 3000.0
+        ceter_depth_clamped = torch.clamp(center_metric_depth, min=min_depth, max=max_depth)
+        inv_depth = 1.0 / ceter_depth_clamped
+        inv_min = 1.0 / max_depth
+        inv_max = 1.0 / min_depth
+        norm_inv_depth = (inv_depth - inv_min) / (inv_max - inv_min)
+
+        raw_depth_clamped = torch.clamp(raw_depths, min=min_depth, max=max_depth)
+        depth_offsets = torch.log(raw_depth_clamped) - torch.log(ceter_depth_clamped)
+        
+
+        return {
+            "image_da3": image_da3, "image_dino": image_dino, "path": str(img_path), 
+            "2d_bbx": bbx2d_processed, "quality": ann_data["quality"],
+            ## GT infos
+            "gt_center": bbx3d_center, "gt_offsets_3d": offsets_3d, "gt_corners_3d": bbx3d_bb8,
+            "gt_center_depth": norm_inv_depth, "gt_depth_offsets": depth_offsets,
+            "meta_depth_min": min_depth, "meta_depth_max": max_depth, "gt_metric_depth": center_metric_depth,
+            }
+    
 
 
 def build_image_dataloader(
-    json_lists: Path,
-    *,
+    root_dir: Path,
+    data_dir: Path,
+    split: str = "test", 
     batch_size: int = 8,
     da3_image_size: int = 448,
     dino_image_size: int = 512,
@@ -116,12 +164,13 @@ def build_image_dataloader(
     """
     Create a DataLoader from a directory that only contains images.
     """
-    dataset = ImageFolderDataset(
-        data_dir,
-        extensions=DEFAULT_EXTENSIONS,
+    json_paths = sorted(root_dir.glob(f"*{split}.json"))
+    json_list = [json.loads(p.read_text(encoding="utf-8")) for p in json_paths]
+    dataset = AnnotationDataset(
+        json_data=json_list,
+        root_dir=data_dir,
         transform_da3=_default_transform(da3_image_size),
         transform_dino=_default_transform(dino_image_size),
-        recursive=recursive,
     )
     return DataLoader(
         dataset,
