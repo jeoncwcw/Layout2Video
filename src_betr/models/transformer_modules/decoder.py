@@ -88,7 +88,7 @@ class TransformerDecoderLayer(nn.Module):
         
         tgt = image_feat
         tgt2 = self.norm1(tgt)
-        q, k = self.with_pos_embed(tgt2, image_feat_pos)
+        q = k = self.with_pos_embed(tgt2, image_feat_pos)
         tgt2 = self.self_attn(q, k, value=tgt2, key_padding_mask=image_feat_key_padding_mask)[0]
         tgt = tgt + self.dropout1(tgt2)
         

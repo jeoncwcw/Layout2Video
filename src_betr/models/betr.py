@@ -17,17 +17,17 @@ class BETRModel(nn.Module):
         super(BETRModel, self).__init__()
         # Feature Extractors
         self.feature_monodepth = DA3FeatureExtractor(
-            cfg_path=cfg.monodepth_cfg_path,
-            checkpoint_path=cfg.monodepth_checkpoint_path,
+            cfg_path=Path(cfg.monodepth_cfg_path),
+            checkpoint_path=Path(cfg.monodepth_checkpoint_path),
             device=cfg.device,
         )
         self.feature_metricdepth = DA3FeatureExtractor(
-            cfg_path=cfg.metricdepth_cfg_path,
-            checkpoint_path=cfg.metricdepth_checkpoint_path,
+            cfg_path=Path(cfg.metricdepth_cfg_path),
+            checkpoint_path=Path(cfg.metricdepth_checkpoint_path),
             device=cfg.device,
         )
         self.feature_dinov3 = DINOv3FeatureExtractor(
-            checkpoint_path=cfg.dinov3_checkpoint_path,
+            checkpoint_path=Path(cfg.dinov3_checkpoint_path),
             device=cfg.device,
         )
 
@@ -95,6 +95,3 @@ class BETRModel(nn.Module):
 
         return output
     
-def build_betr_model(cfg):
-    model = BETRModel(cfg)
-    return model

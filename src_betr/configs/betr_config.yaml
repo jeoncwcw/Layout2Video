@@ -33,9 +33,9 @@ decoder:
 position_encoding:
   temperature: 10000
   normalize: False
-  scale: 6.28318530718  # 2 * pi
+  scale: null
 
 # Box Embedding Config
 box_embedding:
   temperature: 10000
-  scale: 6.28318530718  # 2 * pi
+  scale: null

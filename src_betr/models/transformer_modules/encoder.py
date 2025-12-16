@@ -19,12 +19,12 @@ class TransformerEncoder(nn.Module):
 
     def forward(self,
                 image_feat,
-                mask: Optional[torch.Tensor] = None,
+                image_feat_key_padding_mask: Optional[torch.Tensor] = None,
                 pos: Optional[torch.Tensor] = None):
         output = image_feat
 
         for layer in self.layers:
-            output = layer(output, image_feat_key_padding_mask=mask, pos=pos)
+            output = layer(output, image_feat_key_padding_mask=image_feat_key_padding_mask, pos=pos)
 
         if self.norm is not None:
             output = self.norm(output)

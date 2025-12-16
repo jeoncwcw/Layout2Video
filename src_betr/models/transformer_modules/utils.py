@@ -20,7 +20,7 @@ def _prepare_mask_for_transformer(masks, patch_size=16):
         masks_float,
         kernel_size=patch_size,
         stride=patch_size,
-        ceil_model=True,
+        ceil_mode=True,
     )
     patch_mask = (patch_padding_ratio == 1.0)
     return patch_mask.flatten(1).bool()  # (B, N_patches)

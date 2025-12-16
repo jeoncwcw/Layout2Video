@@ -178,7 +178,6 @@ def build_image_dataloader(
         root_dir=data_dir,
         transform_da3=_default_transform(da3_image_size),
         transform_dino=_default_transform(dino_image_size),
-        da3_image_size=da3_image_size,
         dino_image_size=dino_image_size,
     )
     return DataLoader(

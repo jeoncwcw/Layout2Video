@@ -41,12 +41,12 @@ class PositionEmbeddingSine(nn.Module):
         return pos
     
 class BoxEmbedding(nn.Module):
-    def __init__(self, d_model=256, temperature=10000, scale=2 * math.pi):
+    def __init__(self, d_model=256, temperature=10000, scale=None):
         super(BoxEmbedding, self).__init__()
         self.d_model = d_model
         self.temperature = temperature
-        self.scale = scale
-        self.num_pos_feats = d_model // 2
+        self.scale = scale if scale is not None else 2 * math.pi
+        self.num_pos_feats = d_model
         self.mlp = nn.Sequential(
             nn.Linear(d_model, d_model),
             nn.ReLU(),

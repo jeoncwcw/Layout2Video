@@ -1,17 +1,43 @@
 import sys
+import torch
+import traceback
+from omegaconf import OmegaConf
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
-from models.feature_modules.feature_generator import FeatureGenerator
+from models.betr import BETRModel
 from data.image_dataloader import build_image_dataloader
-from models.feature_modules.feature_extractor import DA3FeatureExtractor, DINOv3FeatureExtractor
-import torch
 
-if __name__ == "__main__":
-    ROOT = Path(__file__).resolve().parents[0]
-    checkpoint_dir, cfg_dir = str(ROOT / "checkpoints"), str(ROOT / "configs")
+FILE_PATH = Path(__file__).resolve()
+SRC_BETR_DIR = FILE_PATH.parent  # src_betr/
+PROJECT_ROOT = SRC_BETR_DIR.parent  # Project Root (Layout2Video-main/)
 
+def resolve_path(cfg, key, root):
+    if key in cfg and cfg[key]:
+        path = Path(cfg[key])
+        if not path.is_absolute():
+            cfg[key] = str(root / path)
+            
+            
+def test_inference():
+    print("Starting inference test...")
+    
+    config_path = SRC_BETR_DIR / "configs" / "betr_config.yaml"
+    if not config_path.exists():
+        print(f"Error: Config file not found at {config_path}")
+        return
+    cfg = OmegaConf.load(config_path)
+    path_keys = [
+        "monodepth_cfg_path", "monodepth_checkpoint_path",
+        "metricdepth_cfg_path", "metricdepth_checkpoint_path",
+        "dinov3_checkpoint_path"
+    ]
+    for key in path_keys:
+        resolve_path(cfg, key, PROJECT_ROOT)   
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    cfg.device = str(device)
+    model = BETRModel(cfg).to(device)
+    
     dataloader = build_image_dataloader(
         root_dir=Path("/home/vmg/Desktop/layout2video/datasets/L2V/labeled"),
         data_dir=Path("/home/vmg/Desktop/layout2video/datasets"),
@@ -20,28 +46,21 @@ if __name__ == "__main__":
         num_workers=2,
         shuffle=False,
     )
-    metric_depth_extractor = DA3FeatureExtractor(
-        cfg_path=Path(cfg_dir + "/da3metric-large.yaml"), checkpoint_path=f"{checkpoint_dir}/DA3Metric_Large.safetensors", device=device
-    )
-    mono_depth_extractor = DA3FeatureExtractor(
-        cfg_path=Path(cfg_dir + "/da3mono-large.yaml"), checkpoint_path=f"{checkpoint_dir}/DA3Mono_Large.safetensors", device=device,
-    )
-    dinov3_extractor = DINOv3FeatureExtractor(
-        checkpoint_path=f"{checkpoint_dir}/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth", device=device,
-    )
-    feature_generator = FeatureGenerator().to(device)
-
+    
     for batch in dataloader:
         batch_da3 = batch["image_da3"].to(device)
         batch_dino = batch["image_dino"].to(device)
-
-        o_metric = metric_depth_extractor(batch_da3)
-        o_mono = mono_depth_extractor(batch_da3)
-        o_dino3 = dinov3_extractor(batch_dino)
+        bbx2d_tight = batch["2d_bbx"].to(device)
+        mask = batch["padding_mask"].to(device)
         breakpoint()
-
-        feature_generator.eval()
+        
+        model.eval()
         with torch.no_grad():
-            output_features = feature_generator(o_metric, o_mono, o_dino3)
-        breakpoint()
-        break
+            output = model(batch_da3, batch_dino, bbx2d_tight, mask)
+            breakpoint()
+            break
+            
+if __name__ == "__main__":
+    test_inference()
+    
+    
