@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Sequence, List, Dict
+from typing import Callable, List, Dict
 
 import numpy as np
 from PIL import Image
@@ -65,12 +65,14 @@ class AnnotationDataset(Dataset):
         root_dir: str | Path,
         transform_da3: Callable[[Image.Image], torch.Tensor],
         transform_dino: Callable[[Image.Image], torch.Tensor],
+        dino_image_size: int = 512,
     ) -> None:
         self.root = Path(root_dir).expanduser()
         if not self.root.exists():
             raise FileNotFoundError(f"Dataset root does not exist: {self.root}")
         self.transform_da3 = transform_da3
         self.transform_dino = transform_dino
+        self.dino_image_size = dino_image_size
 
         self.ann_list = []
         self.image_map = {}
@@ -96,6 +98,7 @@ class AnnotationDataset(Dataset):
         return len(self.ann_list)
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor | str]:
+        # Processing input images
         ann_data = self.ann_list[index]
         img_id = ann_data["image_id"]
         img_info = self.image_map[img_id]
@@ -105,20 +108,20 @@ class AnnotationDataset(Dataset):
         image_da3 = self.transform_da3(image)
         image_dino = self.transform_dino(image)
 
+        # Applying Letterboxing transformations to bounding boxes
         bbx2d_orig = np.array(ann_data["2d_bbx"], dtype=np.float32)
         longest = max(image.width, image.height)
-        scale = 512 / float(longest) # DINO size is always 512
+        scale = self.dino_image_size / float(longest) 
         new_w, new_h = int(round(image.width * scale)), int(round(image.height * scale))
-        pad_left, pad_top = (512 - new_w) // 2, (512 - new_h) // 2
+        pad_left, pad_top = (self.dino_image_size - new_w) // 2, (self.dino_image_size - new_h) // 2
         bbx2d_processed = bbx2d_orig * scale
         bbx2d_processed[[0, 2]] += pad_left
         bbx2d_processed[[1, 3]] += pad_top
-        bbx2d_processed = torch.tensor(bbx2d_processed, dtype=torch.float32) / 512.0
-
+        bbx2d_processed = torch.tensor(bbx2d_processed, dtype=torch.float32) / self.dino_image_size
         bbx3d_bb8 = ann_data["3d_bb8"] * scale
         bbx3d_bb8[:, 0] += pad_left
         bbx3d_bb8[:, 1] += pad_top
-        bbx3d_bb8 = bbx3d_bb8 / 512.0
+        bbx3d_bb8 = bbx3d_bb8 / self.dino_image_size
         bbx3d_center = bbx3d_bb8.mean(dim=0)
         offsets_3d = bbx3d_bb8 - bbx3d_center.unsqueeze(0)
 
@@ -136,6 +139,9 @@ class AnnotationDataset(Dataset):
         raw_depth_clamped = torch.clamp(raw_depths, min=min_depth, max=max_depth)
         depth_offsets = torch.log(raw_depth_clamped) - torch.log(center_depth_clamped)
         
+        # Generating key padding_mask for transformer
+        padding_mask = torch.ones((self.dino_image_size, self.dino_image_size), dtype=torch.bool)
+        padding_mask[pad_top: pad_top + new_h, pad_left: pad_left + new_w] = False
 
         return {
             "image_da3": image_da3, "image_dino": image_dino, "path": str(img_path), 
@@ -144,6 +150,8 @@ class AnnotationDataset(Dataset):
             "gt_center": bbx3d_center, "gt_offsets_3d": offsets_3d.flatten(), "gt_corners_3d": bbx3d_bb8,
             "gt_center_depth": norm_inv_depth, "gt_depth_offsets": depth_offsets,
             "meta_depth_min": min_depth, "meta_depth_max": max_depth, "gt_metric_depth": center_metric_depth,
+            # padding mask
+            "padding_mask": padding_mask,
             }
     
 
@@ -170,6 +178,8 @@ def build_image_dataloader(
         root_dir=data_dir,
         transform_da3=_default_transform(da3_image_size),
         transform_dino=_default_transform(dino_image_size),
+        da3_image_size=da3_image_size,
+        dino_image_size=dino_image_size,
     )
     return DataLoader(
         dataset,
