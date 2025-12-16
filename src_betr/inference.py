@@ -38,6 +38,14 @@ def test_inference():
     cfg.device = str(device)
     model = BETRModel(cfg).to(device)
     
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    print(f"\n📊 Model Statistics:")
+    print(f"  - Total Parameters: {total_params:,}")
+    print(f"  - Trainable Parameters: {trainable_params:,}")
+    print(f"  - Model Size (approx): {total_params * 4 / 1024**2:.2f} MB (float32)\n")
+    
     dataloader = build_image_dataloader(
         root_dir=Path("/home/vmg/Desktop/layout2video/datasets/L2V/labeled"),
         data_dir=Path("/home/vmg/Desktop/layout2video/datasets"),
