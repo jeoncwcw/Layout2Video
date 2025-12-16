@@ -18,7 +18,7 @@ if __name__ == "__main__":
         split="test",
         batch_size=2,
         num_workers=2,
-        shuffle=False,``
+        shuffle=False,
     )
     metric_depth_extractor = DA3FeatureExtractor(
         cfg_path=Path(cfg_dir + "/da3metric-large.yaml"), checkpoint_path=f"{checkpoint_dir}/DA3Metric_Large.safetensors", device=device
