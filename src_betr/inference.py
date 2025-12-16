@@ -2,9 +2,9 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
-from models.feature_generator import FeatureGenerator
+from models.feature_modules.feature_generator import FeatureGenerator
 from data.image_dataloader import build_image_dataloader
-from models.feature_extractor import DA3FeatureExtractor, DINOv3FeatureExtractor
+from models.feature_modules.feature_extractor import DA3FeatureExtractor, DINOv3FeatureExtractor
 import torch
 
 if __name__ == "__main__":

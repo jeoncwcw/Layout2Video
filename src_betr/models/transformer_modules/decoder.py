@@ -57,6 +57,13 @@ class TransformerDecoderLayer(nn.Module):
     def with_pos_embed(self, tensor, pos):
         return tensor if pos is None else tensor + pos
     
+    def forward(self, image_feat, box_embed,
+                image_feat_key_padding_mask: Optional[torch.Tensor] = None,
+                image_feat_pos: Optional[torch.Tensor] = None):
+        if self.normalize_before:
+            return self.forward_pre(image_feat, box_embed, image_feat_key_padding_mask, image_feat_pos)
+        return self.forward_post(image_feat, box_embed, image_feat_key_padding_mask, image_feat_pos)
+    
     def forward_post(self, image_feat, box_embed,
                      image_feat_key_padding_mask: Optional[torch.Tensor] = None,
                      image_feat_pos: Optional[torch.Tensor] = None):

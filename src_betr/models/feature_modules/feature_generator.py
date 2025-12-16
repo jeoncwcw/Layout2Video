@@ -2,18 +2,18 @@ import torch
 import torch.nn as nn
 
 class FeatureGenerator(nn.Module):
-    def __init__(self):
+    def __init__(self, out_channels=512):
         super(FeatureGenerator, self).__init__()
         # Initialize layers or parameters here
         self.patchify_conv_mono = nn.Conv2d(
             in_channels=1,
-            out_channels=512,
+            out_channels=out_channels,
             kernel_size=14,
             stride=14,
         )
         self.patchify_conv_metric = nn.Conv2d(
             in_channels=1,
-            out_channels=512,
+            out_channels=out_channels,
             kernel_size=14,
             stride=14,
         )

@@ -8,7 +8,7 @@ from typing import Sequence
 import torch
 from safetensors.torch import load_file as load_safetensors
 
-ROOT_BETR = Path(__file__).parent.parent
+ROOT_BETR = Path(__file__).parent.parent.parent
 sys.path.insert(0, f"{ROOT_BETR}/models")
 # DA3 dependencies
 from depth_anything_3.cfg import create_object, load_config

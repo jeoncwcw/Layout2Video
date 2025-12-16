@@ -10,6 +10,27 @@ import torch.nn as nn
 from .utils import _get_clones, _get_activation_fn
 from typing import Optional
 
+class TransformerEncoder(nn.Module):
+    def __init__(self, encoder_layer, num_layers, norm=None):
+        super(TransformerEncoder, self).__init__()
+        self.layers = _get_clones(encoder_layer, num_layers)
+        self.num_layers = num_layers
+        self.norm = norm
+
+    def forward(self,
+                image_feat,
+                mask: Optional[torch.Tensor] = None,
+                pos: Optional[torch.Tensor] = None):
+        output = image_feat
+
+        for layer in self.layers:
+            output = layer(output, image_feat_key_padding_mask=mask, pos=pos)
+
+        if self.norm is not None:
+            output = self.norm(output)
+
+        return output
+
 class TransformerEncoderLayer(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu", normalize_before=True):
         super(TransformerEncoderLayer, self).__init__()
@@ -28,6 +49,11 @@ class TransformerEncoderLayer(nn.Module):
 
     def with_pos_embed(self, tensor, pos):
         return tensor if pos is None else tensor + pos
+    
+    def forward(self, image_feat, image_feat_key_padding_mask: Optional[torch.Tensor] = None, pos: Optional[torch.Tensor] = None):
+        if self.normalize_before:
+            return self.forward_pre(image_feat, image_feat_key_padding_mask, pos)
+        return self.forward_post(image_feat, image_feat_key_padding_mask, pos)
     
     def forward_post(self,
                      image_feat,
@@ -55,23 +81,3 @@ class TransformerEncoderLayer(nn.Module):
         image_feat = image_feat + self.dropout2(image_feat2)
         return image_feat
     
-class TransformerEncoder(nn.Module):
-    def __init__(self, encoder_layer, num_layers, norm=None):
-        super(TransformerEncoder, self).__init__()
-        self.layers = _get_clones(encoder_layer, num_layers)
-        self.num_layers = num_layers
-        self.norm = norm
-
-    def forward(self,
-                image_feat,
-                mask: Optional[torch.Tensor] = None,
-                pos: Optional[torch.Tensor] = None):
-        output = image_feat
-
-        for layer in self.layers:
-            output = layer(output, image_feat_key_padding_mask=mask, pos=pos)
-
-        if self.norm is not None:
-            output = self.norm(output)
-
-        return output
