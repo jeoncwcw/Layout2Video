@@ -1,0 +1,41 @@
+# Paths
+monodepth_cfg_path: "src_betr/configs/da3mono-large.yaml"
+monodepth_checkpoint_path: "src_betr/checkpoints/DA3Mono_Large.safetensors"
+metricdepth_cfg_path: "src_betr/configs/da3metric-large.yaml"
+metricdepth_checkpoint_path: "src_betr/checkpoints/DA3Metric_Large.safetensors"
+dinov3_checkpoint_path: "src_betr/checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
+
+# System
+device: "cuda"
+
+# Model Dimensions
+feature_generator_dim: 512  # 
+d_model: 256                # Transformer model dimension
+
+# Model Hyperparameters
+dropout: 0.1
+activation: "relu"
+
+# Transformer Encoder Config
+encoder:
+  nhead: 8
+  dim_feedforward: 1024
+  num_layers: 6
+
+# Transformer Decoder Config
+decoder:
+  d_model: 256
+  nhead: 8
+  dim_feedforward: 1024
+  num_layers: 6
+
+# Positional Encoding Config
+position_encoding:
+  temperature: 10000
+  normalize: False
+  scale: 6.28318530718  # 2 * pi
+
+# Box Embedding Config
+box_embedding:
+  temperature: 10000
+  scale: 6.28318530718  # 2 * pi

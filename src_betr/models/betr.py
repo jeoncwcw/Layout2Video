@@ -3,13 +3,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
 from models.feature_modules import FeatureGenerator, DA3FeatureExtractor, DINOv3FeatureExtractor
-from models.transformer_modules import TransformerEncoder, TransformerDecoder, build_position_encoding, BoxEmbedding, _prepare_mask_for_transformer
+from models.transformer_modules import (
+    TransformerEncoder, TransformerDecoder, 
+    build_position_encoding, BoxEmbedding, _prepare_mask_for_transformer,
+)
+from models.transformer_modules.encoder import TransformerEncoderLayer
+from models.transformer_modules.decoder import TransformerDecoderLayer
 
 from torch import nn
 
 class BETRModel(nn.Module):
     def __init__(self, cfg):
         super(BETRModel, self).__init__()
+        # Feature Extractors
         self.feature_monodepth = DA3FeatureExtractor(
             cfg_path=cfg.monodepth_cfg_path,
             checkpoint_path=cfg.monodepth_checkpoint_path,
@@ -24,12 +30,44 @@ class BETRModel(nn.Module):
             checkpoint_path=cfg.dinov3_checkpoint_path,
             device=cfg.device,
         )
-        self.conv1x1 = nn.Conv2d(in_channels=cfg.feature_generator*4, out_channels=cfg.encoder.d_model, kernel_size=1)
-        self.feature_generator = FeatureGenerator(cfg.feature_generator)
-        self.transformer_encoder = TransformerEncoder(cfg.encoder)
-        self.transformer_decoder = TransformerDecoder(cfg.decoder)
-        self.position_encoding = build_position_encoding(cfg.position_encoding)
-        self.box_embedding = BoxEmbedding(cfg.box_embedding)
+
+        # Feature Generator
+        self.feature_generator = FeatureGenerator(cfg.feature_generator_dim)
+        in_channels = (cfg.feature_generator_dim * 2) + 1024  # Assuming DINOv3 outputs 1024 channels
+        self.conv1x1 = nn.Conv2d(in_channels=in_channels, out_channels=cfg.d_model, kernel_size=1)
+
+        
+        # Transformer Encoder and Decoder
+        encoder_layer = TransformerEncoderLayer(
+            d_model=cfg.d_model,
+            nhead=cfg.encoder.nhead,
+            dim_feedforward=cfg.encoder.dim_feedforward,
+            dropout=cfg.dropout,
+            activation=cfg.activation
+        )
+        self.transformer_encoder = TransformerEncoder(encoder_layer, cfg.encoder.num_layers)
+
+        decoder_layer = TransformerDecoderLayer(
+            d_model=cfg.d_model,
+            nhead=cfg.decoder.nhead,
+            dim_feedforward=cfg.decoder.dim_feedforward,
+            dropout=cfg.dropout,
+            activation=cfg.activation
+        )
+        self.transformer_decoder = TransformerDecoder(decoder_layer, cfg.decoder.num_layers)
+
+        # Positional Encoding and Box Embedding
+        self.position_encoding = build_position_encoding(
+            hidden_dim=cfg.d_model,
+            temperature= cfg.position_encoding.temperature,
+            normalize=cfg.position_encoding.normalize,
+            scale=cfg.position_encoding.scale,
+        )
+        self.box_embedding = BoxEmbedding(
+            d_model=cfg.d_model,
+            temperature=cfg.box_embedding.temperature,
+            scale=cfg.box_embedding.scale,
+        )
 
     def forward(self, images_da3, images_dino, bbx2d_tight, mask = None):
         # Generate combined features
@@ -44,10 +82,19 @@ class BETRModel(nn.Module):
         padding_mask = _prepare_mask_for_transformer(mask)
         box_embeddings = self.box_embedding(bbx2d_tight)
 
+        # Permuting for transformer input
+        combined_features = combined_features.flatten(2).permute(2, 0, 1)  # (H*W, B, C)    
+        pos_encoding = pos_encoding.flatten(2).permute(2, 0, 1)  # (H*W, B, C)
+        box_embeddings = box_embeddings.permute(1, 0, 2)  # (4, B, C)
+
         # Pass through encoder
-        memory = self.transformer_encoder(combined_features, image_feat_key_padding_mask=padding_mask, pos=pos_encoding)
+        image_feat = self.transformer_encoder(combined_features, image_feat_key_padding_mask=padding_mask, pos=pos_encoding)
 
         # Pass through decoder (assuming some target input is provided)
-        output = self.transformer_decoder(memory, box_embeddings, image_feat_key_padding_mask=padding_mask, image_feat_pos=pos_encoding)
+        output = self.transformer_decoder(image_feat, box_embeddings, image_feat_key_padding_mask=padding_mask, image_feat_pos=pos_encoding)
 
         return output
+    
+def build_betr_model(cfg):
+    model = BETRModel(cfg)
+    return model
