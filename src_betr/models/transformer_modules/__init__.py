@@ -1,7 +1,7 @@
 from .decoder import TransformerDecoder
 from .encoder import TransformerEncoder
 from .pos_embedding import build_position_encoding, BoxEmbedding
-from .utils import _prepare_mask_for_transformer
+from .utils import _prepare_mask_for_transformer, _unpatchify
 
 __all__ = [
     'TransformerEncoder',
@@ -9,4 +9,5 @@ __all__ = [
     'build_position_encoding',
     'BoxEmbedding',
     '_prepare_mask_for_transformer',
+    '_unpatchify',
 ]

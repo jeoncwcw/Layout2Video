@@ -24,3 +24,11 @@ def _prepare_mask_for_transformer(masks, patch_size=16):
     )
     patch_mask = (patch_padding_ratio == 1.0)
     return patch_mask.flatten(1).bool()  # (B, N_patches)
+
+def _unpatchify(x):
+    x = x.permute(1, 0, 2) 
+    B, N, C = x.shape
+    H = W = int((N) ** 0.5)
+
+    x_2d = x.reshape(B, H, W, C).permute(0, 3, 1, 2)  # (B, C, H, W)
+    return x_2d

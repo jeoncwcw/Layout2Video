@@ -5,10 +5,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 from models.feature_modules import FeatureGenerator, DA3FeatureExtractor, DINOv3FeatureExtractor
 from models.transformer_modules import (
     TransformerEncoder, TransformerDecoder, 
-    build_position_encoding, BoxEmbedding, _prepare_mask_for_transformer,
+    build_position_encoding, BoxEmbedding, _prepare_mask_for_transformer, _unpatchify,
 )
+from models.dense_modules import DenseHeads, UpsampleLayer, SoftArgmax2D
+
 from models.transformer_modules.encoder import TransformerEncoderLayer
 from models.transformer_modules.decoder import TransformerDecoderLayer
+
 
 from torch import nn
 
@@ -69,6 +72,14 @@ class BETRModel(nn.Module):
             scale=cfg.box_embedding.scale,
         )
 
+        # Upsample and Prediction Heads
+        self.upsample = UpsampleLayer(d_model=cfg.d_model, activation=cfg.activation)
+        self.prediction_heads = DenseHeads(
+            heads=cfg.prediction_heads,
+            in_channels=cfg.d_model // 4,  # After two upsampling layers
+        )
+        self.soft_argmax = SoftArgmax2D(beta=cfg.soft_argmax.beta, is_sigmoid=cfg.soft_argmax.is_sigmoid)
+
     def forward(self, images_da3, images_dino, bbx2d_tight, mask = None):
         # Generate combined features
         metric_depth = self.feature_metricdepth(images_da3)
@@ -87,11 +98,18 @@ class BETRModel(nn.Module):
         pos_encoding = pos_encoding.flatten(2).permute(2, 0, 1)  # (H*W, B, C)
         box_embeddings = box_embeddings.permute(1, 0, 2)  # (4, B, C)
 
-        # Pass through encoder
+        # Pass through Transformer and unpatchify
         image_feat = self.transformer_encoder(combined_features, image_feat_key_padding_mask=padding_mask, pos=pos_encoding)
-
-        # Pass through decoder (assuming some target input is provided)
         output = self.transformer_decoder(image_feat, box_embeddings, image_feat_key_padding_mask=padding_mask, image_feat_pos=pos_encoding)
+        output = _unpatchify(output) # (B, C, H, W)
+
+        # Upsample, Prediction Heads, Soft Argmax and get center coords
+        output = self.upsample(output)
+        output = self.prediction_heads(output)
+        center_heatmap = output['center heatmap']
+        center_coords = self.soft_argmax(center_heatmap)
+        center_coords_orig = center_coords*4
+        output['center coords'] = center_coords_orig
 
         return output
     

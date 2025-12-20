@@ -16,6 +16,14 @@ d_model: 256                # Transformer model dimension
 dropout: 0.1
 activation: "relu"
 
+# Prediction Heads Config
+prediction_heads: [
+  "center heatmap", "center depth", "bb8 offsets", "bb8 depth offsets",
+]
+soft_argmax:
+  beta: 100.0
+  is_sigmoid: True
+
 # Transformer Encoder Config
 encoder:
   nhead: 8
