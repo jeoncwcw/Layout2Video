@@ -1,6 +1,5 @@
 from torch import nn
 import torch
-import torch.nn.functional as F
 
 class UpsampleLayer(nn.Module):
     def __init__(self, d_model, activation="relu"):
@@ -34,9 +33,9 @@ class LayerNorm2d(nn.Module):
     
 def _get_activation_fn(activation):
     if activation == "relu":
-        return F.relu
+        return nn.ReLU()
     if activation == "gelu":
-        return F.gelu
+        return nn.GELU()
     if activation == "glu":
-        return F.glu
+        return nn.GLU()
     raise RuntimeError(f"activation should be relu/gelu/glu, not {activation}.")

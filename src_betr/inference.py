@@ -42,7 +42,6 @@ def test_inference():
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
     print(f"\n📊 Model Statistics:")
-    print(f"  - Total Parameters: {total_params:,}")
     print(f"  - Trainable Parameters: {trainable_params:,}")
     print(f"  - Model Size (approx): {total_params * 4 / 1024**2:.2f} MB (float32)\n")
     
