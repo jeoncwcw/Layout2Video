@@ -19,6 +19,13 @@ def extract_box_corners(sample: Dict[str, Any]) -> List[Tuple[float, float]]:
         uv_list.append((uv_dict["u"], uv_dict["v"]))
 
     return uv_list
+
+def extract_2d_bbox(sample: Dict[str, Any]) -> List[Tuple[float, float]]:
+    bbox = sample.get("bbox2D_tight", [])
+    if len(bbox) != 4:
+        return []
+    x1, y1, x2, y2 = bbox
+    return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
         
         
 
@@ -42,62 +49,61 @@ def draw_corners(image: np.ndarray, box_corners: List[Tuple[float, float]],
 
 
 def main() -> None:
-    # Parse arguments
-    parser = argparse.ArgumentParser(description="Visualize 3D bounding box projections.")
-    parser.add_argument("--json_path", type=Path, help="Path to the JSON annotation file.")
-    parser.add_argument("--dataset_root", type=Path, help="Root directory of the dataset images.")
-    parser.add_argument("--output_dir", type=Path, help="Directory to save visualized images.")
-    quality_count = {"Good": 6, "Moderate": 6, "Poor": 6}
-    count = 18
+    JSON_ROOT = Path("./datasets/L2V_new")
+    datasets = [
+        "nuScenes", "Objectron"
+    ]
+    splits = ["train", "val", "test"]
+    DATASET_ROOT = Path("./datasets/")
+    OUTPUT_DIR = Path("./test/sam2")
     
-    args = parser.parse_args()
-    
-    json_path = args.json_path
-    dataset_root = args.dataset_root
-    output_dir = args.output_dir
-    
-    # Load annotations
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-        image_info_map = {img["id"]: img for img in data["images"]}
-    objects = data.get("annotations", [])
+    for dataset in datasets:
+        for split in splits:
+            json_path = JSON_ROOT / f"{dataset}_{split}.json"
+            output_dir = OUTPUT_DIR / f"{dataset}_{split}"
+            # Load annotations
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+                image_info_map = {img["id"]: img for img in data["images"]}
+            objects = data.get("annotations", [])
 
-    random.shuffle(objects)
-    output_dir.mkdir(parents=True, exist_ok=True)
+            random.shuffle(objects)
+            output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Visualize and save
-    saved = 0
-    for sample in objects:
-        quality = sample.get("quality")
-        if quality_count[quality] <= 0:
-            continue
-        quality_count[quality] -= 1
-        img = image_info_map.get(sample["image_id"])
-        rel_path = img.get("file_path")
-        img_path = dataset_root / rel_path
-        if not img_path or not img_path.is_file():
-            raise FileNotFoundError(f"Image file not found: {img_path}")
+            # Visualize and save
+            saved = 0
+            for sample in objects:
+                # quality = sample.get("quality")
+                # if quality_count[quality] <= 0:
+                #     continue
+                # quality_count[quality] -= 1
+                img = image_info_map.get(sample["image_id"])
+                rel_path = img.get("file_path")
+                img_path = DATASET_ROOT / rel_path
+                if not img_path or not img_path.is_file():
+                    raise FileNotFoundError(f"Image file not found: {img_path}")
 
-        image = cv2.imread(str(img_path))
-        if image is None:
-            raise RuntimeError(f"Failed to load image: {img_path}")
+                image = cv2.imread(str(img_path))
+                if image is None:
+                    raise RuntimeError(f"Failed to load image: {img_path}")
 
-        box_corners = extract_box_corners(sample)
-        if not box_corners:
-            continue
+                # box_corners = extract_box_corners(sample)
+                box_corners = extract_2d_bbox(sample)
+                if not box_corners:
+                    continue
 
-        annotated = draw_corners(image, box_corners)
-        out_path = output_dir / f"{quality}{quality_count[quality]}_{img_path.stem}.jpg"
-        # out_path = output_dir / f"{img_path.stem}_vis.jpg"
-        cv2.imwrite(str(out_path), annotated)
-        saved += 1
-        print(f"[INFO] saved {out_path}")
+                annotated = draw_corners(image, box_corners)
+                # out_path = output_dir / f"{quality}{quality_count[quality]}_{img_path.stem}.jpg"
+                out_path = output_dir / f"{img_path.stem}_vis.jpg"
+                cv2.imwrite(str(out_path), annotated)
+                saved += 1
+                print(f"[INFO] saved {out_path}")
 
-        if saved >= count:
-            break
+                # if saved >= count:
+                #     break
 
-    if saved == 0:
-        print("No visualizations saved.")
+            if saved == 0:
+                print("No visualizations saved.")
 
 
 if __name__ == "__main__":

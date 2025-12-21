@@ -5,3 +5,4 @@ datasets/
 __pycache__/
 *.py[cod]
 test/
+sam2/

@@ -14,7 +14,7 @@ def main():
     MIN_AREA = MIN_SIZE * MIN_SIZE 
     TARGET_QUALITY = "Good"
     
-    dataset_root = Path("./datasets/L2V")
+    dataset_root = Path("./datasets/L2V/labeled")
     
     print(f"Filtering Criteria: Quality='{TARGET_QUALITY}', Min Area>={MIN_AREA}px ({MIN_SIZE}x{MIN_SIZE})")
     print("="*60)
