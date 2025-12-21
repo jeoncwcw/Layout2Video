@@ -47,8 +47,8 @@ def main() -> None:
     parser.add_argument("--json_path", type=Path, help="Path to the JSON annotation file.")
     parser.add_argument("--dataset_root", type=Path, help="Root directory of the dataset images.")
     parser.add_argument("--output_dir", type=Path, help="Directory to save visualized images.")
-    # quality_count = {"Good": 3, "Moderate": 3, "Poor": 3}
-    count = 9
+    quality_count = {"Good": 6, "Moderate": 6, "Poor": 6}
+    count = 18
     
     args = parser.parse_args()
     
@@ -68,10 +68,10 @@ def main() -> None:
     # Visualize and save
     saved = 0
     for sample in objects:
-        # quality = sample.get("quality")
-        # if quality_count[quality] <= 0:
-        #     continue
-        # quality_count[quality] -= 1
+        quality = sample.get("quality")
+        if quality_count[quality] <= 0:
+            continue
+        quality_count[quality] -= 1
         img = image_info_map.get(sample["image_id"])
         rel_path = img.get("file_path")
         img_path = dataset_root / rel_path
@@ -87,8 +87,8 @@ def main() -> None:
             continue
 
         annotated = draw_corners(image, box_corners)
-        # out_path = output_dir / f"{quality}{quality_count[quality]}_{img_path.stem}.jpg"
-        out_path = output_dir / f"{img_path.stem}_vis.jpg"
+        out_path = output_dir / f"{quality}{quality_count[quality]}_{img_path.stem}.jpg"
+        # out_path = output_dir / f"{img_path.stem}_vis.jpg"
         cv2.imwrite(str(out_path), annotated)
         saved += 1
         print(f"[INFO] saved {out_path}")
