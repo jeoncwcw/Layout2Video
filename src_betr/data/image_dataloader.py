@@ -178,7 +178,7 @@ def build_image_dataloader(
     sampler = None
     if split == "train":
         json_list = [filtered_annotations(p, target_quality=target_quality, min_area=min_area, dino_size=dino_image_size) for p in json_paths]
-        sampler = balanced_sampler(json_paths, target_quality=target_quality, min_area=min_area, dino_size=dino_image_size)
+        sampler = balanced_sampler(json_paths, json_list)
         shuffle = False
     else:
         json_list = [json.loads(p.read_text(encoding="utf-8")) for p in json_paths]
@@ -204,9 +204,9 @@ def build_image_dataloader(
 
 if __name__ == "__main__":
     # Example: iterate over a folder full of images
-    sample_root = Path("/home/vmg/Desktop/layout2video/datasets/L2V/labeled")
+    sample_root = Path("/home/vmg/Desktop/layout2video/datasets/L2V_new")
     data_root = Path("/home/vmg/Desktop/layout2video/datasets")
-    loader = build_image_dataloader(sample_root, data_root, split="val",batch_size=2, da3_image_size=448, dino_image_size=512, num_workers=0)
+    loader = build_image_dataloader(sample_root, data_root, split="test",batch_size=2, da3_image_size=448, dino_image_size=512, num_workers=0)
     batch = next(iter(loader))
     print("Batch DA3 image tensor shape:", batch["image_da3"].shape)
     print("Batch DINO image tensor shape:", batch["image_dino"].shape)

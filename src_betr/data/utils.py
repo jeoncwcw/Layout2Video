@@ -5,17 +5,16 @@ import math
 import torch
 from torch.utils.data import WeightedRandomSampler
 
-def balanced_sampler(json_paths: List[Path], target_quality: str, min_area: int, dino_size: int) -> WeightedRandomSampler:
+def balanced_sampler(json_paths: List[Path], json_data_list: List[dict]) -> WeightedRandomSampler:
     """
     Square Root Sampling
     Weight = 1 / sqrt(Count)
     """
     sample_dataset_indices = []
     dataset_counts = {}
-    for json_file in json_paths:
-        dataset_name = json_file.stem.split('_')[0]
-        filtered_data = filtered_annotations(json_file, target_quality, min_area, dino_size)
-        num_samples = len(filtered_data["annotations"])
+    for path, data in zip(json_paths, json_data_list):
+        dataset_name = path.stem.split('_')[0]
+        num_samples = len(data["annotations"])
         sample_dataset_indices.extend([dataset_name] * num_samples)
         dataset_counts[dataset_name] = num_samples
     
@@ -28,12 +27,9 @@ def balanced_sampler(json_paths: List[Path], target_quality: str, min_area: int,
 
     min_weight = min(dataset_weights.values())
     dataset_weights = {k: v / min_weight for k, v in dataset_weights.items()}
-
-    for dataset_name in sample_dataset_indices:
-        weights.append(dataset_weights[dataset_name])
     
     print(f"[Sampler] Dataset Weights: {dataset_weights}")
-
+    
     for dataset_name in sample_dataset_indices:
         weights.append(dataset_weights[dataset_name])
 
@@ -53,9 +49,7 @@ def filtered_annotations(json: Path, target_quality: str, min_area: int, dino_si
             continue
             
         bbox = obj.get("bbox2D_tight")
-        if not bbox:
-            continue
-        if bbox[0] == -1 or bbox[1] == -1 or bbox[2] == -1 or bbox[3] == -1:
+        if not bbox or -1 in bbox:
             continue
         
         img = image_map[obj["image_id"]]
