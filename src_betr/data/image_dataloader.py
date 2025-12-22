@@ -9,6 +9,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import cv2
 import json
+from .utils import balanced_sampler, filtered_annotations
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -163,6 +164,8 @@ def build_image_dataloader(
     batch_size: int = 8,
     da3_image_size: int = 448,
     dino_image_size: int = 512,
+    target_quality: str = "good",
+    min_area: int = 32*32,
     shuffle: bool = True,
     num_workers: int = 4,
     pin_memory: bool = True,
@@ -172,7 +175,13 @@ def build_image_dataloader(
     Create a DataLoader from a directory that only contains images.
     """
     json_paths = sorted(root_dir.glob(f"*{split}.json"))
-    json_list = [json.loads(p.read_text(encoding="utf-8")) for p in json_paths]
+    sampler = None
+    if split == "train":
+        json_list = [filtered_annotations(p, target_quality=target_quality, min_area=min_area, dino_size=dino_image_size) for p in json_paths]
+        sampler = balanced_sampler(json_paths, target_quality=target_quality, min_area=min_area, dino_size=dino_image_size)
+        shuffle = False
+    else:
+        json_list = [json.loads(p.read_text(encoding="utf-8")) for p in json_paths]
     dataset = AnnotationDataset(
         json_data=json_list,
         root_dir=data_dir,
@@ -180,10 +189,13 @@ def build_image_dataloader(
         transform_dino=_default_transform(dino_image_size),
         dino_image_size=dino_image_size,
     )
+    
+
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
+        sampler=sampler,
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,
