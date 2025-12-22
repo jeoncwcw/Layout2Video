@@ -4,6 +4,7 @@ from typing import List
 import math
 import torch
 from torch.utils.data import WeightedRandomSampler
+import json
 
 def balanced_sampler(json_paths: List[Path], json_data_list: List[dict]) -> WeightedRandomSampler:
     """
@@ -16,7 +17,8 @@ def balanced_sampler(json_paths: List[Path], json_data_list: List[dict]) -> Weig
         dataset_name = path.stem.split('_')[0]
         num_samples = len(data["annotations"])
         sample_dataset_indices.extend([dataset_name] * num_samples)
-        dataset_counts[dataset_name] = num_samples
+        if num_samples > 0:
+            dataset_counts[dataset_name] = num_samples
     
     print(f"[Sampler] Dataset Counts: {dataset_counts}")
 
@@ -36,8 +38,8 @@ def balanced_sampler(json_paths: List[Path], json_data_list: List[dict]) -> Weig
     weights = torch.tensor(weights, dtype=torch.double)
     return WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
 
-def filtered_annotations(json: Path, target_quality: str, min_area: int, dino_size: int) -> dict:
-    with open(json, 'r') as f:
+def filtered_annotations(json_path: Path, target_quality: str, min_area: int, dino_size: int) -> dict:
+    with open(json_path, 'r') as f:
         data = json.load(f)
     
     annotations = data.get("annotations", [])

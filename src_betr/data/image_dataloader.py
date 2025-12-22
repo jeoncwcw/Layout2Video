@@ -168,7 +168,7 @@ def build_image_dataloader(
     batch_size: int = 8,
     da3_image_size: int = 448,
     dino_image_size: int = 512,
-    target_quality: str = "good",
+    target_quality: str = "Good",
     min_area: int = 32*32,
     shuffle: bool = True,
     num_workers: int = 4,
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     # Example: iterate over a folder full of images
     sample_root = Path("/home/vmg/Desktop/layout2video/datasets/L2V_new")
     data_root = Path("/home/vmg/Desktop/layout2video/datasets")
-    loader = build_image_dataloader(sample_root, data_root, split="test",batch_size=2, da3_image_size=448, dino_image_size=512, num_workers=0)
+    loader = build_image_dataloader(sample_root, data_root, split="train",batch_size=2, da3_image_size=448, dino_image_size=512, num_workers=0)
     batch = next(iter(loader))
     print("Batch DA3 image tensor shape:", batch["image_da3"].shape)
     print("Batch DINO image tensor shape:", batch["image_dino"].shape)
