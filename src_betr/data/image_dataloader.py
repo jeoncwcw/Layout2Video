@@ -9,7 +9,11 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import cv2
 import json
-from .utils import balanced_sampler, filtered_annotations
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from data.utils import balanced_sampler, filtered_annotations
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
