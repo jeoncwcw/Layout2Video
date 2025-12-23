@@ -126,9 +126,9 @@ class AnnotationDataset(Dataset):
         bbx3d_bb8 = ann_data["3d_bb8"] * scale
         bbx3d_bb8[:, 0] += pad_left
         bbx3d_bb8[:, 1] += pad_top
-        bbx3d_bb8 = bbx3d_bb8 / self.dino_image_size
-        bbx3d_center = bbx3d_bb8.mean(dim=0)
-        offsets_3d = bbx3d_bb8 - bbx3d_center.unsqueeze(0)
+        bbx3d_bb8 = bbx3d_bb8 / self.dino_image_size # Normalize to [0,1] range
+        bbx3d_center = bbx3d_bb8.mean(dim=0) # [2]
+        offsets_3d = bbx3d_bb8 - bbx3d_center.unsqueeze(0) # Normalized offsets
 
         # depth (Metric to Stable Monodepth Style)
         raw_depths = torch.tensor(ann_data["depth"], dtype=torch.float32)
@@ -139,14 +139,14 @@ class AnnotationDataset(Dataset):
         inv_depth = 1.0 / center_depth_clamped
         inv_min = 1.0 / max_depth
         inv_max = 1.0 / min_depth
-        norm_inv_depth = (inv_depth - inv_min) / (inv_max - inv_min)
+        norm_inv_depth = (inv_depth - inv_min) / (inv_max - inv_min) # Normalized inverse depth [0,1]
 
         raw_depth_clamped = torch.clamp(raw_depths, min=min_depth, max=max_depth)
-        depth_offsets = torch.log(raw_depth_clamped) - torch.log(center_depth_clamped)
+        depth_offsets = torch.log(raw_depth_clamped) - torch.log(center_depth_clamped) # Log space offsets (not need to normalize)
         
         # Generating key padding_mask for transformer
         padding_mask = torch.ones((self.dino_image_size, self.dino_image_size), dtype=torch.bool)
-        padding_mask[pad_top: pad_top + new_h, pad_left: pad_left + new_w] = False
+        padding_mask[pad_top: pad_top + new_h, pad_left: pad_left + new_w] = False # [H, W] (True for padding)
 
         return {
             "image_da3": image_da3, "image_dino": image_dino, "path": str(img_path), 
