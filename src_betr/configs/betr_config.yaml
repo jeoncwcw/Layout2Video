@@ -8,6 +8,11 @@ dinov3_checkpoint_path: "src_betr/checkpoints/dinov3_vitl16_pretrain_lvd1689m-8a
 # System
 device: "cuda"
 
+# Data
+data:
+  da3_image_size: 448
+  dino_image_size: 512
+
 # Model Dimensions
 feature_generator_dim: 512  # 
 d_model: 256                # Transformer model dimension

@@ -70,6 +70,7 @@ class DA3FeatureExtractor:
 
         state = load_safetensors(str(checkpoint_path))
         # Auto-detect metric if not specified
+        cfg_path = Path(cfg_path)
         use_metric = is_metric if is_metric is not None else "metric" in cfg_path.stem.lower()
         # If keys already start with model./module., keep as-is
         has_prefix = any(k.startswith("model.") or k.startswith("module.") for k in state.keys())
