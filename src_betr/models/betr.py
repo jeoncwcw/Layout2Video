@@ -80,11 +80,21 @@ class BETRModel(nn.Module):
         )
         self.soft_argmax = SoftArgmax2D(beta=cfg.soft_argmax.beta, is_sigmoid=cfg.soft_argmax.is_sigmoid)
 
-    def forward(self, images_da3, images_dino, bbx2d_tight, mask = None):
+    def forward(self, bbx2d_tight, mask = None,
+                images_da3 = None, images_dino = None,
+                f_metric = None, f_mono = None, f_dino = None,
+                feature_mode = False):
         # Generate combined features
-        metric_depth = self.feature_metricdepth(images_da3)
-        mono_depth = self.feature_monodepth(images_da3)
-        dinov3_features = self.feature_dinov3(images_dino)
+        try:
+            if feature_mode:
+                metric_depth, mono_depth, dinov3_features = f_metric, f_mono, f_dino
+            else:
+                metric_depth = self.feature_metricdepth(images_da3)
+                mono_depth = self.feature_monodepth(images_da3)
+                dinov3_features = self.feature_dinov3(images_dino)
+        except RuntimeError as e:
+            print("RuntimeError in feature extraction:", e)
+            raise e
         combined_features = self.feature_generator(metric_depth, mono_depth, dinov3_features)
 
         # Add positional encoding
