@@ -4,6 +4,9 @@ monodepth_checkpoint_path: "src_betr/checkpoints/DA3Mono_Large.safetensors"
 metricdepth_cfg_path: "src_betr/configs/da3metric-large.yaml"
 metricdepth_checkpoint_path: "src_betr/checkpoints/DA3Metric_Large.safetensors"
 dinov3_checkpoint_path: "src_betr/checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
+json_root: "datasets/L2V_new"
+feature_dir: "datasets/betr_features"
+image_map_path: "datasets/image_map.json"
 
 # System
 device: "cuda"
@@ -52,3 +55,13 @@ position_encoding:
 box_embedding:
   temperature: 10000
   scale: null
+
+# Loss configs
+loss_weights:
+  lambda_: 2.0 # Weights for fine loss
+  sigma_: 2.0 # heatmap std
+
+# Hyperparameters
+batch_size: 8
+learning_rate: 1e-4
+weight_decay: 1e-4

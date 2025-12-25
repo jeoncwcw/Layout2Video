@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader, Dataset
 import json
 import numpy as np
 from pathlib import Path
+from typing import List, Dict
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -37,6 +38,8 @@ class FeatureDataset(Dataset):
                             "depth": obj["depth"],
                             "rel_path": rel_path
                         })
+                    else:
+                        print(f"Warning: Image path {rel_path} not found in image map.")
 
     def _convert_projected_corners(self, corners_list: List[Dict]):
         coords = [(float(c["u"]), float(c["v"])) for c in corners_list]
@@ -49,7 +52,7 @@ class FeatureDataset(Dataset):
         # Processing input images
         ann_data = self.ann_list[index]
         img_id = ann_data["image_id"]
-        img_info = self.image_map[img_id]
+        img_info = self.image_info_map[img_id]
         rel_path = ann_data["rel_path"]
 
         feat_file = self.image_map[rel_path]
@@ -93,14 +96,14 @@ class FeatureDataset(Dataset):
         depth_offsets = torch.log(raw_depth_clamped) - torch.log(center_depth_clamped) # Log space offsets (not need to normalize)
         
         # Generating key padding_mask for transformer
-        padding_mask = torch.ones((self.dino_image_size, self.dino_image_size), dtype=torch.bool)
+        padding_mask = torch.ones((self.dino_img_size, self.dino_img_size), dtype=torch.bool)
         padding_mask[pad_top: pad_top + new_h, pad_left: pad_left + new_w] = False # [H, W] (True for padding)
 
         return {
             # Feature Tensors of Backbone Outputs (Removing batch dimension)
-            "feat_metric": features["metric"].squeeze(0),
-            "feat_mono": features["mono"].squeeze(0),
-            "feat_dino": features["dino"].squeeze(0),
+            "feat_metric": features["metric"].float().squeeze(0),
+            "feat_mono": features["mono"].float().squeeze(0),
+            "feat_dino": features["dino"].float().squeeze(0),
 
             # Basic infos
             "path": str(rel_path), "2d_bbx": bbx2d_processed, "quality": ann_data["quality"],
@@ -122,7 +125,7 @@ def build_feature_dataloader(
     min_area: int = 32*32,
     num_workers: int = 4,
 ) -> DataLoader:
-    json_paths = sorted(root_dir.glob(f"*test.json"))
+    json_paths = sorted(root_dir.glob(f"*train.json"))
 
     json_list = []
     for p in json_paths:
@@ -154,8 +157,8 @@ def build_feature_dataloader(
 if __name__ == "__main__":
     # Example: iterate over a folder full of images
     sample_root = Path("/home/vmg/Desktop/layout2video/datasets/L2V_new")
-    data_root = Path("/home/vmg/Desktop/layout2video/datasets")
-    loader = build_feature_dataloader(sample_root, data_root, batch_size=2, dino_img_size=512, num_workers=0)
+    feature_dir = Path("/home/vmg/Desktop/layout2video/datasets/betr_features")
+    loader = build_feature_dataloader(sample_root, feature_dir, image_map_pth = Path("/home/vmg/Desktop/layout2video/datasets/image_map.json"), batch_size=2, dino_img_size=512, num_workers=0)
     batch = next(iter(loader))
     print("Batch feat metric depth tensor shape:", batch["feat_metric"].shape)
     print("Batch feat mono depth tensor shape:", batch["feat_mono"].shape)

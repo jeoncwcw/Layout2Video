@@ -107,7 +107,7 @@ class BETRModel(nn.Module):
         combined_features = combined_features.flatten(2).permute(2, 0, 1)  # (H*W, B, C)    
         pos_encoding = pos_encoding.flatten(2).permute(2, 0, 1)  # (H*W, B, C)
         box_embeddings = box_embeddings.permute(1, 0, 2)  # (4, B, C)
-
+        
         # Pass through Transformer and unpatchify
         image_feat = self.transformer_encoder(combined_features, image_feat_key_padding_mask=padding_mask, pos=pos_encoding)
         output = self.transformer_decoder(image_feat, box_embeddings, image_feat_key_padding_mask=padding_mask, image_feat_pos=pos_encoding)

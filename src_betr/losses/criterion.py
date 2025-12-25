@@ -6,7 +6,7 @@ from .utils import TargetGenerator
 class BETRLoss(nn.Module):
     def __init__(self, lambda_fine=2.0, sigma=2.0, heatmap_size=128, input_size=512):
         super(BETRLoss, self).__init__()
-        self.heatmap_size, self.input_size = heatmap_size, input_size
+        self.heatmap_size, self.input_size = int(heatmap_size), int(input_size)
         self.lambda_fine = lambda_fine
         self.target_gen = TargetGenerator(heatmap_size=heatmap_size, sigma=sigma)
         self.smooth_l1 = nn.SmoothL1Loss(reduction="none")
@@ -23,7 +23,8 @@ class BETRLoss(nn.Module):
         valid_mask = 1.0 - F.interpolate(raw_mask, size=(self.heatmap_size, self.heatmap_size), mode="nearest")
         valid_mask = valid_mask.to(device)
 
-        weight_map = self.target_gen(batch["gt_center"], device, valid_mask=valid_mask)
+        weight_map = self.target_gen.generate_heatmap(batch["gt_center"], device)
+        weight_map = weight_map * valid_mask  # Mask out padding areas
 
         # -- [Center Loss] --
         # L_coarse
@@ -40,10 +41,10 @@ class BETRLoss(nn.Module):
         loss_offset = self._weighted_loss(preds['bb8 offsets'], gt_offsets_map, weight_map)
 
         gt_depth_map = batch['gt_center_depth'].view(-1, 1, 1, 1).expand(-1, 1, self.heatmap_size, self.heatmap_size)  # [B, 1, 128, 128]
-        loss_depth = self._weighted_masked_loss(preds['center depth'], gt_depth_map, weight_map)
+        loss_depth = self._weighted_loss(preds['center depth'], gt_depth_map, weight_map)
 
         gt_depth_offsets_map = batch['gt_depth_offsets'].view(-1, 8, 1, 1).expand(-1, -1, self.heatmap_size, self.heatmap_size)  # [B, 8, 128, 128]
-        loss_depth_offset = self._weighted_masked_loss(preds['bb8 depth offsets'], gt_depth_offsets_map, weight_map)
+        loss_depth_offset = self._weighted_loss(preds['bb8 depth offsets'], gt_depth_offsets_map, weight_map)
 
         total_loss = loss_center + loss_offset + loss_depth + loss_depth_offset
         return {

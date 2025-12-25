@@ -17,6 +17,7 @@ from data.utils import filtered_annotations
 
 def get_filtered_unique_images(root_json_dir, target_quality="Good", min_area=32*32, dino_size=512):
     unique_paths = set()
+    target_dirs = ["ai_048_001", "ai_048_002", "ai_048_003", "ai_048_004", "ai_048_005"]
     
     json_paths = list(Path(root_json_dir).glob("*train.json"))
     for path in json_paths:
@@ -25,7 +26,9 @@ def get_filtered_unique_images(root_json_dir, target_quality="Good", min_area=32
         image_map = {img["id"]: img["file_path"] for img in filtered_data["images"]}
         for img_id in valid_image_ids:
             if img_id in image_map:
-                unique_paths.add(image_map[img_id])
+                path = image_map[img_id]
+                if any(dir_name in path for dir_name in target_dirs):
+                    unique_paths.add(path)
     
     print(f"Total unique filtered images: {len(unique_paths)}")
     return sorted(list(unique_paths))
@@ -51,22 +54,25 @@ def worker(rank, world_size, all_image_rel_paths, cfg, save_root):
             if not full_path.exists():
                 pbar.write(f"Image not found: {full_path}")
                 continue
-            img = Image.open(full_path).convert("RGB")
-            img_da3 = transform_da3(img).unsqueeze(0).to(device)
-            img_dino = transform_dino(img).unsqueeze(0).to(device)
             
-            f_metric = metric_ext(img_da3).to(torch.bfloat16).cpu()
-            f_mono = mono_ext(img_da3).to(torch.bfloat16).cpu()
-            f_dino = dino_ext(img_dino).to(torch.bfloat16).cpu()
             
             path_hash = hashlib.md5(str(rel_path).encode()).hexdigest()
-            feat_filename = f"feat_{path_hash}.pth"
-            torch.save({
-                "metric": f_metric,
-                "mono": f_mono,
-                "dino": f_dino,
-            }, feat_dir / feat_filename)
-            local_mapping[str(rel_path)] = feat_filename
+            feat_filename = feat_dir / f"feat_{path_hash}.pth"
+            save_path = feat_dir / feat_filename
+            if not save_path.exists():
+                img = Image.open(full_path).convert("RGB")
+                img_da3 = transform_da3(img).unsqueeze(0).to(device)
+                img_dino = transform_dino(img).unsqueeze(0).to(device)
+            
+                f_metric = metric_ext(img_da3).to(torch.bfloat16).cpu()
+                f_mono = mono_ext(img_da3).to(torch.bfloat16).cpu()
+                f_dino = dino_ext(img_dino).to(torch.bfloat16).cpu()
+                torch.save({
+                    "metric": f_metric,
+                    "mono": f_mono,
+                    "dino": f_dino,
+                }, save_path)
+                local_mapping[str(rel_path)] = str(feat_filename)
             
     with open(save_root / f"image_map_rank{rank}.json", "w") as f:
         json.dump(local_mapping, f, indent=4)
@@ -75,7 +81,8 @@ def extract_features_parallel():
     cfg = OmegaConf.load("./src_betr/configs/betr_config.yaml")
     save_root = Path("/media/vmg/Extreme Pro/layout2video/")
     (save_root / "betr_features").mkdir(parents=True, exist_ok=True)
-
+    image_map_path = save_root / "image_map.json"
+    
     image_rel_paths = get_filtered_unique_images(
         root_json_dir="./datasets/L2V_new",
     )
@@ -87,13 +94,17 @@ def extract_features_parallel():
     mp.spawn(worker, args=(world_size, image_rel_paths, cfg, save_root), nprocs=world_size, join=True)
     
     final_mapping = {}
+    if image_map_path.exists():
+        with open(image_map_path, "r") as f:
+            final_mapping = json.load(f)
+            
     for rank in range(world_size):
         map_path = save_root / f"image_map_rank{rank}.json"
         with open(map_path, "r") as f:
             final_mapping.update(json.load(f))
         os.remove(map_path)
     
-    with open(save_root / "image_map.json", "w") as f:
+    with open(image_map_path, "w") as f:
         json.dump(final_mapping, f, indent=4)
     print(f"Feature extraction completed and mapped to image_map.json")
     
