@@ -15,6 +15,8 @@ device: "cuda"
 data:
   da3_image_size: 448
   dino_image_size: 512
+  target_quality: "Good"
+  min_area_object: 32*32
 
 # Model Dimensions
 feature_generator_dim: 512  # 

@@ -39,8 +39,8 @@ def run_overfitting_test():
         image_map_pth=image_map_path,
         batch_size=cfg.batch_size,
         dino_img_size=gt_size,
-        target_quality="Good",
-        min_area=32*32,
+        target_quality=cfg.data.target_quality,
+        min_area=cfg.data.min_area_object,
         num_workers=4,
     )
     
