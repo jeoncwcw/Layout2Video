@@ -171,7 +171,7 @@ def build_image_dataloader(
     dino_image_size: int = 512,
     target_quality: str = "Good",
     min_area: int = 32*32,
-    shuffle: bool = True,
+    shuffle: bool = False,
     num_workers: int = 4,
     pin_memory: bool = True,
     drop_last: bool = False,
@@ -181,10 +181,11 @@ def build_image_dataloader(
     """
     json_paths = sorted(root_dir.glob(f"*{split}.json"))
     sampler = None
-    if filter == True:
-        json_list = [filtered_annotations(p, target_quality=target_quality, min_area=min_area, dino_size=dino_image_size) for p in json_paths]
+    if split == "train":
         sampler = balanced_sampler(json_paths, json_list)
         shuffle = False
+    if filter == True:
+        json_list = [filtered_annotations(p, target_quality=target_quality, min_area=min_area, dino_size=dino_image_size) for p in json_paths]
     else:
         json_list = [json.loads(p.read_text(encoding="utf-8")) for p in json_paths]
     dataset = AnnotationDataset(
@@ -211,7 +212,7 @@ if __name__ == "__main__":
     # Example: iterate over a folder full of images
     sample_root = Path("/home/vmg/Desktop/layout2video/datasets/L2V_new")
     data_root = Path("/home/vmg/Desktop/layout2video/datasets")
-    loader = build_image_dataloader(sample_root, data_root, split="train", filter=True, batch_size=2, da3_image_size=448, dino_image_size=512, num_workers=0)
+    loader = build_image_dataloader(sample_root, data_root, split="val", filter=True, batch_size=2, da3_image_size=448, dino_image_size=512, num_workers=0)
     batch = next(iter(loader))
     print("Batch DA3 image tensor shape:", batch["image_da3"].shape)
     print("Batch DINO image tensor shape:", batch["image_dino"].shape)

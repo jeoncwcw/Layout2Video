@@ -17,6 +17,7 @@ data:
   dino_image_size: 512
   target_quality: "Good"
   min_area_object: 1024 # 32x32
+batch_size: 
 
 # Model Dimensions
 feature_generator_dim: 512  # 
@@ -67,3 +68,4 @@ loss_weights:
 batch_size: 8
 learning_rate: 1e-4
 weight_decay: 1e-4
+num_

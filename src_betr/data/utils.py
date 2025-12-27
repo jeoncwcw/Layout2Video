@@ -3,10 +3,13 @@ import numpy as np
 from typing import List
 import math
 import torch
-from torch.utils.data import WeightedRandomSampler
+from torch.utils.data import WeightedRandomSampler, Sampler
+import torch.distributed as dist
 import json
 
-def balanced_sampler(json_paths: List[Path], json_data_list: List[dict]) -> WeightedRandomSampler:
+def balanced_sampler(json_paths: List[Path], json_data_list: List[dict],
+                     is_ddp: bool=False, rank: int=0, world_size: int=1,
+                     ) -> WeightedRandomSampler | DistributedWeightedSampler:
     """
     Square Root Sampling
     Weight = 1 / sqrt(Count)
@@ -36,6 +39,14 @@ def balanced_sampler(json_paths: List[Path], json_data_list: List[dict]) -> Weig
         weights.append(dataset_weights[dataset_name])
 
     weights = torch.tensor(weights, dtype=torch.double)
+    if is_ddp:
+        return DistributedWeightedSampler(
+            dataset=None,
+            weights=weights,
+            num_replicas=world_size,
+            rank=rank,
+            replacement=True
+        )
     return WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
 
 def filtered_annotations(json_path: Path, target_quality: str, min_area: int, dino_size: int) -> dict:
@@ -77,3 +88,34 @@ def filtered_annotations(json_path: Path, target_quality: str, min_area: int, di
     
     data["annotations"] = filtered_annotations
     return data
+
+class DistributedWeightedSampler(Sampler):
+    def __init__(self, dataset, weights, num_replicas=None, rank=None, replacement=True, seed=0):
+        if num_replicas is None:
+            num_replicas = dist.get_world_size() if dist.is_initialized() else 1
+        if rank is None:
+            rank = dist.get_rank() if dist.is_initialized() else 0
+        self.dataset = dataset
+        self.weights = torch.as_tensor(weights, dtype=torch.double)
+        self.num_replicas = num_replicas
+        self.rank = rank
+        self.replacement = replacement
+        self.seed = seed
+        self.epoch = 0
+        self.num_samples = math.ceil(len(self.dataset) / self.num_replicas)
+        self.total_size = self.num_samples * self.num_replicas
+        
+    def __iter__(self):
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
+        indicies = torch.multinomial(self.weights, self.total_size, self.replacement, generator=g).tolist()
+        indicies = indicies[self.rank*self.num_samples:(self.rank+1)*self.num_samples]
+        if not self.replacement and len(indices) < self.num_samples:
+             indices += indices[:(self.num_samples - len(indices))]
+        return iter(indicies)
+    
+    def __len__(self):
+        return self.num_samples
+    
+    def set_epoch(self, epoch):
+        self.epoch = epoch

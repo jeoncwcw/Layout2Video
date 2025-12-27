@@ -119,13 +119,18 @@ def build_feature_dataloader(
     root_dir: Path,
     feature_dir: Path,
     image_map_pth: Path,
+    split: str = "train",
     batch_size: int = 16,
     dino_img_size: int = 512,
     target_quality: str = "Good",
     min_area: int = 32*32,
     num_workers: int = 4,
+    shuffle: bool = False,
+    is_ddp: bool = False,
+    rank: int = 0,
+    world_size: int = 1,
 ) -> DataLoader:
-    json_paths = sorted(root_dir.glob(f"*train.json"))
+    json_paths = sorted(root_dir.glob(f"*{split}.json"))
 
     json_list = []
     for p in json_paths:
@@ -143,8 +148,10 @@ def build_feature_dataloader(
         image_map_pth=image_map_pth,
         dino_img_size=dino_img_size
     )
-    sampler = balanced_sampler(json_paths, json_list)
-    shuffle = False
+    sampler = None
+    if split == "train":
+        sampler = balanced_sampler(json_paths, json_list, is_ddp=is_ddp, rank=rank, world_size=world_size)
+        shuffle = False
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -158,7 +165,7 @@ if __name__ == "__main__":
     # Example: iterate over a folder full of images
     sample_root = Path("/home/vmg/Desktop/layout2video/datasets/L2V_new")
     feature_dir = Path("/home/vmg/Desktop/layout2video/datasets/betr_features")
-    loader = build_feature_dataloader(sample_root, feature_dir, image_map_pth = Path("/home/vmg/Desktop/layout2video/datasets/image_map.json"), batch_size=2, dino_img_size=512, num_workers=0)
+    loader = build_feature_dataloader(sample_root, feature_dir, split="val", image_map_pth = Path("/home/vmg/Desktop/layout2video/datasets/image_map.json"), batch_size=2, dino_img_size=512, num_workers=0)
     batch = next(iter(loader))
     print("Batch feat metric depth tensor shape:", batch["feat_metric"].shape)
     print("Batch feat mono depth tensor shape:", batch["feat_mono"].shape)
