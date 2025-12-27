@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 from typing import List, Dict
 import sys
+from torch.utils.data.distributed import DistributedSampler
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from data.utils import balanced_sampler, filtered_annotations
@@ -151,6 +152,9 @@ def build_feature_dataloader(
     sampler = None
     if split == "train":
         sampler = balanced_sampler(json_paths, json_list, is_ddp=is_ddp, rank=rank, world_size=world_size)
+        shuffle = False
+    elif is_ddp:
+        sampler = DistributedSampler(dataset, shuffle=False, rank=rank, num_replicas=world_size, drop_last=False)
         shuffle = False
     return DataLoader(
         dataset,

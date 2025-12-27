@@ -10,6 +10,7 @@ image_map_path: "datasets/image_map.json"
 
 # System
 device: "cuda"
+model_name: "betr_model_v1"
 
 # Data
 data:
@@ -17,7 +18,6 @@ data:
   dino_image_size: 512
   target_quality: "Good"
   min_area_object: 1024 # 32x32
-batch_size: 
 
 # Model Dimensions
 feature_generator_dim: 512  # 
@@ -26,6 +26,7 @@ d_model: 256                # Transformer model dimension
 # Model Hyperparameters
 dropout: 0.1
 activation: "relu"
+feature_mode: True  # Whether to use feature generator
 
 # Prediction Heads Config
 prediction_heads: [
@@ -65,7 +66,12 @@ loss_weights:
   sigma_: 2.0 # heatmap std
 
 # Hyperparameters
-batch_size: 8
+num_epochs: 300
+batch_size: 24
 learning_rate: 1e-4
 weight_decay: 1e-4
-num_
+num_workers: 0
+
+# Validation and Logging
+val_interval: 1
+log_interval: 100

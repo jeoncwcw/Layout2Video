@@ -19,20 +19,28 @@ class BETRModel(nn.Module):
     def __init__(self, cfg):
         super(BETRModel, self).__init__()
         # Feature Extractors
-        self.feature_monodepth = DA3FeatureExtractor(
-            cfg_path=Path(cfg.monodepth_cfg_path),
-            checkpoint_path=Path(cfg.monodepth_checkpoint_path),
-            device=cfg.device,
-        )
-        self.feature_metricdepth = DA3FeatureExtractor(
-            cfg_path=Path(cfg.metricdepth_cfg_path),
-            checkpoint_path=Path(cfg.metricdepth_checkpoint_path),
-            device=cfg.device,
-        )
-        self.feature_dinov3 = DINOv3FeatureExtractor(
-            checkpoint_path=Path(cfg.dinov3_checkpoint_path),
-            device=cfg.device,
-        )
+        self.feature_mode = cfg.feature_mode
+        if not self.feature_mode:
+            print("🚀 Loading Heavy Backbones (Image Training Mode)...")
+            self.feature_monodepth = DA3FeatureExtractor(
+                cfg_path=Path(cfg.monodepth_cfg_path),
+                checkpoint_path=Path(cfg.monodepth_checkpoint_path),
+                device=cfg.device,
+            )
+            self.feature_metricdepth = DA3FeatureExtractor(
+                cfg_path=Path(cfg.metricdepth_cfg_path),
+                checkpoint_path=Path(cfg.metricdepth_checkpoint_path),
+                device=cfg.device,
+            )
+            self.feature_dinov3 = DINOv3FeatureExtractor(
+                checkpoint_path=Path(cfg.dinov3_checkpoint_path),
+                device=cfg.device,
+            )
+        else:
+            print("⚡ Feature Mode On: Skipping Backbone Loading (Memory Saved!)")
+            self.feature_monodepth = None
+            self.feature_metricdepth = None
+            self.feature_dinov3 = None
 
         # Feature Generator
         self.feature_generator = FeatureGenerator(cfg.feature_generator_dim)
