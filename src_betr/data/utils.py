@@ -48,7 +48,7 @@ def balanced_sampler(json_paths: List[Path], json_data_list: List[dict],
         )
     return WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
 
-def filtered_annotations(json_path: Path, target_quality: str, min_area: int, dino_size: int) -> dict:
+def filtered_annotations(json_path: Path, target_quality: str = "Good", min_area: int = 1024, dino_size: int = 512) -> dict:
     with open(json_path, 'r') as f:
         data = json.load(f)
     
