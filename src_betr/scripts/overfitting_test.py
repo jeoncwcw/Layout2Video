@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 from models.betr import BETRModel
 from losses.criterion import BETRLoss
-from data.feature_dataloader import build_feature_dataloader
+from data.wds_dataloader import build_wds_feature_dataloader
 
 
 def run_overfitting_test():
@@ -29,19 +29,15 @@ def run_overfitting_test():
                          heatmap_size=gt_size/4, input_size=gt_size).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
     
-    root_dir = Path(cfg.json_root)
-    feature_dir = Path(cfg.feature_dir)
-    image_map_path = Path(cfg.image_map_path)
+    root_dir = Path(cfg.wds_root)
     
-    dataloader = build_feature_dataloader(
-        root_dir=root_dir,
-        feature_dir=feature_dir,
-        image_map_pth=image_map_path,
+    dataloader = build_wds_feature_dataloader(
+        wds_root=root_dir,
         batch_size=cfg.batch_size,
         dino_img_size=gt_size,
-        target_quality=cfg.data.target_quality,
-        min_area=cfg.data.min_area_object,
+        split="train",
         num_workers=4,
+        epoch_length=cfg.epoch_length
     )
     
     print("Extracting a batch for overfitting...")

@@ -1,11 +1,10 @@
 import os
+import random
 import torch
 import torch.optim as optim
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
-from torch.utils.data import DataLoader
 from pathlib import Path
 from omegaconf import OmegaConf
 from tqdm import tqdm
@@ -17,9 +16,14 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from models.betr import BETRModel
 from losses.criterion import BETRLoss
-from data.feature_dataloader import build_feature_dataloader
+from data.wds_dataloader import build_wds_feature_dataloader
 
-
+def set_seed(seed: int, rank: int = 0):
+    seed = seed + rank
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -30,6 +34,8 @@ def cleanup():
     dist.destroy_process_group()
     
 def reduce_dict(input_dict, world_size, average=True):
+    if not input_dict:
+        return {}
     with torch.no_grad():
         names = sorted(input_dict.keys())
         values = [input_dict[k] for k in names]
@@ -59,11 +65,12 @@ def print_epoch_stats(epoch, num_epochs, train_metrics, val_metrics=None):
 
 def train_worker(rank, world_size, cfg):
     setup(rank, world_size)
+    set_seed(cfg.get("seed", 42), rank)
     torch.cuda.set_device(rank)
     device = torch.device(f"cuda:{rank}")
     
     model = BETRModel(cfg).to(device)
-    model = DDP(model, device_ids=[rank], find_unused_parameters=True)
+    model = DDP(model, device_ids=[rank], find_unused_parameters=False)
     gt_size = cfg.data.dino_image_size
     criterion = BETRLoss(
         cfg.loss_weights.lambda_, 
@@ -78,20 +85,14 @@ def train_worker(rank, world_size, cfg):
     )
     
     total_data_kwargs = {
-        "root_dir": Path(cfg.json_root),
-        "feature_dir": Path(cfg.feature_dir),
-        "image_map_pth": Path(cfg.image_map_path),
+        "wds_root": Path(cfg.wds_root),
         "batch_size": cfg.batch_size,
         "dino_img_size": gt_size,
-        "target_quality": cfg.data.target_quality,
-        "min_area": cfg.data.min_area_object,
         "num_workers": cfg.num_workers,
-        "is_ddp": True,
-        "rank": rank,
-        "world_size": world_size,
+        "world_size": world_size
     }
-    train_dataloader = build_feature_dataloader(**total_data_kwargs, split="train")
-    val_dataloader = build_feature_dataloader(**total_data_kwargs, split="val")
+    train_dataloader = build_wds_feature_dataloader(**total_data_kwargs, split="train", epoch_length=cfg.epoch_length)
+    val_dataloader = build_wds_feature_dataloader(**total_data_kwargs, split="val", epoch_length=cfg.epoch_length//10)
     
     num_epochs = cfg.num_epochs
     checkpoint_dir = PROJECT_ROOT / "checkpoints"
@@ -101,21 +102,21 @@ def train_worker(rank, world_size, cfg):
         print("=" * 50)
         print(f"Starting training for {num_epochs} epochs...")
         print("=" * 50)
-    scaler = torch.cuda.amp.GradScaler()
+    scaler = torch.amp.GradScaler('cuda')
+    num_batches_per_epoch = cfg.epoch_length // (cfg.batch_size * world_size)
+    
     for epoch in range(num_epochs):
-        if hasattr(train_dataloader.sampler, "set_epoch"):
-            train_dataloader.sampler.set_epoch(epoch)
         # Training phase
         model.train()
         train_meter = defaultdict(float)
         train_num_samples = 0
         iterator = train_dataloader
         if rank == 0:
-            iterator = tqdm(train_dataloader, desc=f"Epoch [{epoch+1}/{num_epochs}] Training", leave=True)
+            iterator = tqdm(train_dataloader, desc=f"Epoch [{epoch+1}/{num_epochs}] Training", leave=True, total=num_batches_per_epoch)
         for batch in iterator:
             batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             optimizer.zero_grad()
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 outputs = model(
                     bbx2d_tight=batch_gpu["2d_bbx"],
                     mask=batch_gpu["padding_mask"],
@@ -155,18 +156,27 @@ def train_worker(rank, world_size, cfg):
                     val_outputs = model(
                         bbx2d_tight=val_batch_gpu["2d_bbx"],
                         mask=val_batch_gpu["padding_mask"],
-                        feat_metric=val_batch_gpu["feat_metric"],
-                        feat_mono=val_batch_gpu["feat_mono"],
-                        feat_dino=val_batch_gpu["feat_dino"],
-                        feature_mode=cfg.model.feature_mode,
+                        f_metric=val_batch_gpu["feat_metric"],
+                        f_mono=val_batch_gpu["feat_mono"],
+                        f_dino=val_batch_gpu["feat_dino"],
+                        feature_mode=cfg.feature_mode,
                     )
                     val_loss_dict = criterion(val_outputs, val_batch_gpu)
                     for k, v in val_loss_dict.items():
                         val_meter[k] += v.item() * val_batch_gpu["2d_bbx"].size(0)
                         
                     val_num_samples += val_batch_gpu["2d_bbx"].size(0)
-            local_avg_val_metrics = {k: v / val_num_samples for k, v in val_meter.items()}
-            global_val_metrics = reduce_dict(local_avg_val_metrics, world_size, average=True)
+            total_samples_tensor = torch.tensor([val_num_samples], device=device)
+            dist.all_reduce(total_samples_tensor, op=dist.ReduceOp.SUM)
+            total_val_samples = total_samples_tensor.item()
+            
+            if total_val_samples > 0:
+                local_sum_metrics = {k: v for k, v in val_meter.items()}
+                global_sum_metrics = reduce_dict(local_sum_metrics, world_size, average=False)
+                global_val_metrics = {k: v / total_val_samples for k, v in global_sum_metrics.items()}
+            else:
+                if rank == 0:
+                    print("⚠️ No validation samples found!")
                 
         if rank == 0:
             print_epoch_stats(epoch, num_epochs, train_avg_metrics, global_val_metrics)
@@ -193,6 +203,6 @@ def main():
     mp.spawn(train_worker, args=(world_size, cfg), nprocs=world_size, join=True)
     
 if __name__ == "__main__":
-    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
     mp.set_sharing_strategy('file_system')
     main()

@@ -1,12 +1,10 @@
 from collections import defaultdict
-import os
 import json
 import torch
 import numpy as np
 import webdataset as wds
 from pathlib import Path
 from tqdm import tqdm
-import io
 import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -71,7 +69,7 @@ def main():
     
     with open(image_map_path, 'r') as f:
         image_map = json.load(f)
-    split = "train"
+    split = "val"
     json_paths = sorted(json_root.glob(f"*{split}.json"))
     
     for json_path in json_paths:

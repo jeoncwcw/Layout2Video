@@ -4,13 +4,12 @@ monodepth_checkpoint_path: "src_betr/checkpoints/DA3Mono_Large.safetensors"
 metricdepth_cfg_path: "src_betr/configs/da3metric-large.yaml"
 metricdepth_checkpoint_path: "src_betr/checkpoints/DA3Metric_Large.safetensors"
 dinov3_checkpoint_path: "src_betr/checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
-json_root: "datasets/L2V_new"
-feature_dir: "datasets/betr_features"
-image_map_path: "datasets/image_map.json"
+wds_root: "datasets/betr_wds"
 
 # System
 device: "cuda"
 model_name: "betr_model_v1"
+seed: 42
 
 # Data
 data:
@@ -18,6 +17,7 @@ data:
   dino_image_size: 512
   target_quality: "Good"
   min_area_object: 1024 # 32x32
+epoch_length: 50000
 
 # Model Dimensions
 feature_generator_dim: 512  # 
@@ -66,12 +66,12 @@ loss_weights:
   sigma_: 2.0 # heatmap std
 
 # Hyperparameters
-num_epochs: 300
-batch_size: 24
+num_epochs: 100
+batch_size: 16
 learning_rate: 1e-4
 weight_decay: 1e-4
-num_workers: 0
+num_workers: 4
 
 # Validation and Logging
-val_interval: 1
-log_interval: 100
+val_interval: 5
+log_interval: 25
