@@ -74,4 +74,4 @@ num_workers: 4
 
 # Validation and Logging
 val_interval: 5
-log_interval: 25
+save_interval: 25

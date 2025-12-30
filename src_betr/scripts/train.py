@@ -143,7 +143,7 @@ def train_worker(rank, world_size, cfg):
         
         # Validation phase
         global_val_metrics = None
-        if epoch % cfg.get("val_interval", 1) == 0:
+        if (epoch+1) % cfg.get("val_interval", 1) == 0:
             model.eval()
             val_meter = defaultdict(float)
             val_num_samples = 0
