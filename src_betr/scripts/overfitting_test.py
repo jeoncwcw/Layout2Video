@@ -56,12 +56,11 @@ def run_overfitting_test():
     for epoch in range(1, 101):
         optimizer.zero_grad()
         outputs = model(
+            images_dino = batch_gpu["image_dino"],
+            images_da3 = batch_gpu["image_da3"],
             bbx2d_tight = batch_gpu["2d_bbx"],
             mask = batch_gpu["padding_mask"],
-            f_metric = batch_gpu["feat_metric"],
-            f_mono = batch_gpu["feat_mono"],
-            f_dino = batch_gpu["feat_dino"],
-            feature_mode = True
+            feature_mode = False
         )
         
         loss_dict = criterion(outputs, batch_gpu)
@@ -97,15 +96,18 @@ def run_overfitting_test():
 def visualization(small_batch, outputs, out_dir: Path):
     pred_center = outputs['center coords'].squeeze(1).cpu().numpy() # [B, 2] # unnormalized, dino scale
     pred_offsets = outputs['bb8 offsets'].cpu().numpy() # [B, 16, H, W] # normalized, feature scale (1/4 dino)
-    for i, data in enumerate(small_batch):
+    for i in range(4):
         # Convert tensor to image
-        image = data['image_dino'].permute(1,2,0).cpu().numpy()
-        image = (image * IMAGENET_STD + IMAGENET_MEAN) * 255.0
-        image = image.astype(np.uint8)
+        image = small_batch['image_dino'][i].permute(1,2,0).cpu().numpy()
+        mean = np.array(IMAGENET_MEAN).reshape(1,1,3)
+        std = np.array(IMAGENET_STD).reshape(1,1,3)
+        image = (image * std + mean) * 255.0
+        image = np.clip(image, 0, 255).astype(np.uint8)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         # load gt, predicted corners
-        corners_3d = data['gt_corners_3d'].cpu().numpy() * 512
-        heatmap_center_x, heatmap_center_y = int(round(pred_center[i][0]/4)), int(round(pred_center[i][1]/4))
-        pred_offset = pred_offsets[i,:,heatmap_center_y, heatmap_center_x].view(8, 2) # [8, 2]
+        corners_3d = small_batch['gt_corners_3d'][i].cpu().numpy() * 512
+        heatmap_center_x, heatmap_center_y = int(np.clip(round(pred_center[i][0]/4), 0, 127)), int(np.clip(round(pred_center[i][1]/4), 0, 127))
+        pred_offset = pred_offsets[i,:,heatmap_center_y, heatmap_center_x].reshape(8, 2) # [8, 2]
         pred_corners = pred_offset * 512 + pred_center[i][None, :] # unnormalize and to dino scale
         # Draw GT, Predicted corners
         for j in range(8):
@@ -120,11 +122,11 @@ def comparing_depth(small_batch, outputs):
     pred_center = outputs['center coords'].squeeze(1).cpu().numpy()
     pred_center_depth = outputs['center depth'].cpu().numpy() # [B, 1, H, W]
     pred_depth_offsets = outputs['bb8 depth offsets'].cpu().numpy() # [B, 8, H, W]
-    gt_center_depth = data['gt_metric_depth'].cpu() # [B], scalar value
-    gt_depth_offsets = data['gt_offsets_3d'].cpu().numpy() # [B, 8]
-    for i, data in enumerate(small_batch):
+    gt_center_depth = small_batch['gt_metric_depth'].cpu() # [B], scalar value
+    gt_depth_offsets = small_batch['gt_offsets_3d'].cpu().numpy() # [B, 8]
+    for i in range(4):
         gt_depths = gt_center_depth[i].item() * np.exp(gt_depth_offsets[i])  # [8]
-        heatmap_center_x, heatmap_center_y = int(round(pred_center[i][0]/4)), int(round(pred_center[i][1]/4))
+        heatmap_center_x, heatmap_center_y = int(np.clip(round(pred_center[i][0]/4), 0, 127)), int(np.clip(round(pred_center[i][1]/4), 0, 127))
         pred_offset = pred_depth_offsets[i,:,heatmap_center_y, heatmap_center_x] # [8]
         pred_center = pred_center_depth[i,0,heatmap_center_y, heatmap_center_x].item()
         pred_depths = pred_center * np.exp(pred_offset)  # [8]
