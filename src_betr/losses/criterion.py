@@ -4,13 +4,14 @@ import torch.nn.functional as F
 from .utils import TargetGenerator
 
 class BETRLoss(nn.Module):
-    def __init__(self, lambda_fine=2.0, sigma=2.0, heatmap_size=128, input_size=512):
+    def __init__(self, lambda_fine=2.0, sigma=2.0, heatmap_size=128, input_size=512, threshold=.1):
         super(BETRLoss, self).__init__()
         self.heatmap_size, self.input_size = int(heatmap_size), int(input_size)
         self.lambda_fine = lambda_fine
         self.target_gen = TargetGenerator(heatmap_size=heatmap_size, sigma=sigma)
         self.smooth_l1 = nn.SmoothL1Loss(reduction="none")
-
+        self.threshold = threshold
+        
     def forward(self, preds, batch):
         """
         preds['center coords']: [B, 1, 2] (0-511 scale)

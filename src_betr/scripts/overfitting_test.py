@@ -11,7 +11,7 @@ sys.path.insert(0, str(BETR_ROOT))
 from models.betr import BETRModel
 from losses.criterion import BETRLoss
 from data.image_dataloader import build_image_dataloader
-from utils import set_seed, visualization, comparing_depth
+from utils import set_seed, visualization
 
 
 def run_overfitting_test():
@@ -45,7 +45,7 @@ def run_overfitting_test():
     model.train()
     start_time = time.time()
     
-    for epoch in range(1, 11):
+    for epoch in range(1, 301):
         optimizer.zero_grad()
         outputs = model(
             images_dino = batch_gpu["image_dino"],
@@ -97,4 +97,3 @@ if __name__ == "__main__":
     output_dir = PROJ_ROOT / "test" / "overfitting_vis"
     output_dir.mkdir(parents=True, exist_ok=True)
     visualization(small_batches, outputs, output_dir)
-    comparing_depth(small_batches, outputs)

@@ -64,7 +64,7 @@ box_embedding:
 
 # Loss configs
 loss_weights:
-  lambda_: 2.0 # Weights for fine loss
+  lambda_: 5.0 # Weights for fine loss
   sigma_: 2.0 # heatmap std
 
 # Hyperparameters
