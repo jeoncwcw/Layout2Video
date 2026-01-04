@@ -124,8 +124,8 @@ class BETRModel(nn.Module):
         # Upsample, Prediction Heads, Soft Argmax and get center coords
         output = self.upsample(output)
         output = self.prediction_heads(output)
-        center_heatmap = output['center heatmap']
-        center_coords = self.soft_argmax(center_heatmap)
+        center_heatmap = output['center heatmap'] # [B, 1, 128, 128]
+        center_coords = self.soft_argmax(center_heatmap) # [B, 1, 2]
         center_coords_orig = center_coords*4
         output['center coords'] = center_coords_orig
 

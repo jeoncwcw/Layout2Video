@@ -9,6 +9,8 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import cv2
 import json
+import random
+import functools
 
 import sys
 from pathlib import Path
@@ -58,7 +60,12 @@ def _default_transform(image_size: int) -> Callable[[Image.Image], torch.Tensor]
 
     return transform
 
-
+def _seed_worker(worker_id: int, base_seed: int) -> None:
+    worker_seed = base_seed + worker_id
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+    torch.manual_seed(worker_seed)
+    
 class AnnotationDataset(Dataset):
     """
     Minimal dataset that collects every image file under a root directory.
@@ -164,6 +171,7 @@ class AnnotationDataset(Dataset):
 def build_image_dataloader(
     root_dir: Path,
     data_dir: Path,
+    seed: int,
     split: str = "test",
     filter: bool = True, 
     batch_size: int = 8,
@@ -196,7 +204,9 @@ def build_image_dataloader(
         dino_image_size=dino_image_size,
     )
     
-
+    generator = torch.Generator().manual_seed(seed)
+    worker_init = functools.partial(_seed_worker, base_seed=seed)
+        
     return DataLoader(
         dataset,
         batch_size=batch_size,
@@ -205,6 +215,8 @@ def build_image_dataloader(
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,
+        generator=generator,
+        worker_init_fn=worker_init,
     )
 
 

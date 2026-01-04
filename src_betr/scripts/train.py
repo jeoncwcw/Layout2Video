@@ -17,13 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from models.betr import BETRModel
 from losses.criterion import BETRLoss
 from data.wds_dataloader import build_wds_feature_dataloader
-
-def set_seed(seed: int, rank: int = 0):
-    seed = seed + rank
-    random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+from utils import set_seed
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'

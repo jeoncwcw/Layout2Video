@@ -101,7 +101,7 @@ class DA3FeatureExtractor:
 
         imgs = imgs.unsqueeze(1).to(self.device)  # (N, 1, H, W)
 
-        with torch.inference_mode():
+        with torch.no_grad():
             raw = self.model(imgs, None, None, [])
         depth = raw.depth.squeeze(0)  # (N, H, W)
         if depth.dim() == 3:
@@ -200,7 +200,7 @@ class DINOv3FeatureExtractor:
             raise ValueError(f"Expected CHW or BCHW tensor, got shape {tuple(images.shape)}")
         batch = batch.to(self.device)
 
-        with torch.inference_mode():
+        with torch.no_grad():
             feat_dict = self.model.forward_features(batch)
             patch_tokens = feat_dict["x_norm_patchtokens"]  # (B, N, C)
 
