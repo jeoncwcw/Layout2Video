@@ -3,6 +3,9 @@ from torch import nn
 import torch.nn.functional as F
 from .utils import TargetGenerator
 
+MEAN = {"center": 0.497, "bb8_offset": 0.0, "center_depth": 6.181, "bb8_depth_offset": -0.009}
+STD = {"center": 0.144, "bb8_offset": 0.097, "center_depth": 1.002, "bb8_depth_offset": 0.133}
+
 class BETRLoss(nn.Module):
     def __init__(self, lambda_fine=2.0, sigma=2.0, heatmap_size=128, input_size=512, threshold=.1):
         super(BETRLoss, self).__init__()
@@ -24,7 +27,8 @@ class BETRLoss(nn.Module):
         valid_mask = 1.0 - F.interpolate(raw_mask, size=(self.heatmap_size, self.heatmap_size), mode="nearest")
         valid_mask = valid_mask.to(device)
 
-        weight_map = self.target_gen.generate_heatmap(batch["gt_center"], device)
+        gt_center_raw = batch['gt_center'] * float(STD["center"].to(device)) + MEAN["center"].to(device)  # unnormalize to [0, 1]
+        weight_map = self.target_gen.generate_heatmap(gt_center_raw, device)
         weight_map = weight_map * valid_mask  # Mask out padding areas
 
         # -- [Center Loss] --
@@ -33,6 +37,7 @@ class BETRLoss(nn.Module):
         loss_coarse = (coarse_diff * valid_mask).sum() / (valid_mask.sum() + 1e-8)
         # L_fine
         pred_center_norm = preds['center coords'].squeeze(1) / float(self.input_size)
+        pred_center_norm = (pred_center_norm - MEAN["center"].to(device)) / STD["center"].to(device)
         loss_fine = F.smooth_l1_loss(pred_center_norm, batch['gt_center'])
 
         loss_center = loss_coarse + self.lambda_fine * loss_fine

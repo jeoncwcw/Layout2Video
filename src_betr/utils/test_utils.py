@@ -4,10 +4,13 @@ from pathlib import Path
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
+MEAN = {"center": 0.497, "bb8_offset": 0.0, "center_depth": 6.181, "bb8_depth_offset": -0.009}
+STD = {"center": 0.144, "bb8_offset": 0.097, "center_depth": 1.002, "bb8_depth_offset": 0.133}
 
 def visualization(small_batch, outputs, out_dir: Path):
     pred_center = outputs['center coords'].squeeze(1).cpu().numpy() # [B, 2] # unnormalized, dino scale
     pred_offsets = outputs['bb8 offsets'].cpu().numpy() # [B, 16, H, W] # normalized, feature scale (1/4 dino)
+    pred_offsets = pred_offsets * STD["bb8_offset"] + MEAN["bb8_offset"]
     for i in range(4):
         # Convert tensor to image
         image = small_batch['image_dino'][i].permute(1,2,0).cpu().numpy()

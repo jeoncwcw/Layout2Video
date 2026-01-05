@@ -7,6 +7,45 @@ from torch.utils.data import WeightedRandomSampler, Sampler
 import torch.distributed as dist
 import json
 
+DATASET_STATS = {
+    "Hypersim": {"type": "indoor", "count": 264154},
+    "SUNRGBD": {"type": "indoor", "count": 13006},
+    "Objectron": {"type": "indoor", "count": 28890},
+    "KITTI": {"type": "outdoor", "count": 4435},
+    "nuScenes": {"type": "outdoor", "count": 47893},
+}
+
+def get_hierarchical_weights(found_datasets: List[str], indoor_prob: float = 0.6, outdoor_prob: float = 0.4) -> dict:
+    """
+    Hierarchical sampling weights:
+    1. Split datasets into indoor/outdoor groups
+    2. Assign group-level probability (e.g., 60% indoor, 40% outdoor)
+    3. Within each group, use sqrt inverse frequency
+    """
+    groups = {"indoor": [], "outdoor": []}
+    
+    for name in found_datasets:
+        key = next((k for k in DATASET_STATS if k in name), None)
+        if key:
+            groups[DATASET_STATS[key]["type"]].append((name, DATASET_STATS[key]["count"]))
+    
+    final_weights = {}
+    group_probs = {"indoor": indoor_prob, "outdoor": outdoor_prob}
+    
+    for g_name, datasets in groups.items():
+        datasets = [(name, count) for name, count in datasets if count > 0]
+        if not datasets:
+            continue
+        
+        raw_weights = [1.0 / math.sqrt(count) for _, count in datasets]
+        total_score = sum(raw_weights)
+        
+        target_prob = group_probs[g_name]
+        for (d_name, _), w in zip(datasets, raw_weights):
+            final_weights[d_name] = (w / total_score) * target_prob
+    
+    return final_weights
+
 def balanced_sampler(json_paths: List[Path], json_data_list: List[dict],
                      is_ddp: bool=False, rank: int=0, world_size: int=1,
                      ) -> WeightedRandomSampler | Sampler:
@@ -25,18 +64,17 @@ def balanced_sampler(json_paths: List[Path], json_data_list: List[dict],
     
     print(f"[Sampler] Dataset Counts: {dataset_counts}")
 
+    found_datasets = list(dataset_counts.keys())
+    dataset_weights = get_hierarchical_weights(found_datasets)
+    
+    print(f"[Sampler] Hierarchical Weights: {dataset_weights}")
+    
     weights = []
-    dataset_weights = {
-        name: 1.0 / math.sqrt(count) for name, count in dataset_counts.items()
-    }
-
-    min_weight = min(dataset_weights.values())
-    dataset_weights = {k: v / min_weight for k, v in dataset_weights.items()}
-    
-    print(f"[Sampler] Dataset Weights: {dataset_weights}")
-    
     for dataset_name in sample_dataset_indicies:
-        weights.append(dataset_weights[dataset_name])
+        dataset_weight = dataset_weights.get(dataset_name, 0.0)
+        sample_count = dataset_counts.get(dataset_name, 1)
+        # Per-sample weight = dataset_weight / num_samples_in_dataset
+        weights.append(dataset_weight / sample_count)
 
     weights = torch.tensor(weights, dtype=torch.double)
     if is_ddp:
