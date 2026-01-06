@@ -25,8 +25,8 @@ def get_filtered_unique_images(root_json_dir, target_quality="Good", min_area=32
         image_map = {img["id"]: img["file_path"] for img in filtered_data["images"]}
         for img_id in valid_image_ids:
             if img_id in image_map:
-                path = image_map[img_id]
-                unique_paths.add(path)
+                img_path = image_map[img_id]
+                unique_paths.add(img_path)
     
     print(f"Total unique filtered images: {len(unique_paths)}")
     return sorted(list(unique_paths))
@@ -70,7 +70,7 @@ def worker(rank, world_size, all_image_rel_paths, cfg, save_root):
                     "mono": f_mono,
                     "dino": f_dino,
                 }, save_path)
-                local_mapping[str(rel_path)] = str(feat_filename)
+                local_mapping[str(rel_path)] = str(f"feat_{path_hash}.pth")
             
     with open(save_root / f"image_map_rank{rank}.json", "w") as f:
         json.dump(local_mapping, f, indent=4)

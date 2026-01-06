@@ -191,14 +191,13 @@ def build_image_dataloader(
     """
     json_paths = sorted(root_dir.glob(f"*{split}.json"))
     sampler = None
-    if split == "train":
-        json_list = [filtered_annotations(p, target_quality=target_quality, min_area=min_area, dino_size=dino_image_size) for p in json_paths]
-        sampler = balanced_sampler(json_paths, json_list)
-        shuffle = False
     if filter == True:
         json_list = [filtered_annotations(p, target_quality=target_quality, min_area=min_area, dino_size=dino_image_size) for p in json_paths]
     else:
         json_list = [json.loads(p.read_text(encoding="utf-8")) for p in json_paths]
+    if split == "train":
+        sampler = balanced_sampler(json_paths, json_list)
+        shuffle = False
     dataset = AnnotationDataset(
         json_data=json_list,
         root_dir=data_dir,

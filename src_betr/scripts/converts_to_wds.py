@@ -32,31 +32,26 @@ def process_sample(ann_data, pad_info, dino_img_size=512):
     bbx3d_bb8 = bbx3d_bb8 / dino_img_size # Normalize to [0,1] range
     bbx3d_center = bbx3d_bb8.mean(dim=0) # [2]
     offsets_3d = bbx3d_bb8 - bbx3d_center.unsqueeze(0) # Normalized offsets
+    offsets_3d = offsets_3d.flatten()  # [16]
 
     # depth (Metric to Stable Monodepth Style)
-    raw_depths = torch.tensor(ann_data["depth"], dtype=torch.float32)
-    center_metric_depth = raw_depths.mean()
-
-    min_depth, max_depth = 0.1, 3000.0
-    center_depth_clamped = torch.clamp(center_metric_depth, min=min_depth, max=max_depth)
-    inv_depth = 1.0 / center_depth_clamped
-    inv_min = 1.0 / max_depth
-    inv_max = 1.0 / min_depth
-    norm_inv_depth = (inv_depth - inv_min) / (inv_max - inv_min) # Normalized inverse depth [0,1]
-
-    raw_depth_clamped = torch.clamp(raw_depths, min=min_depth, max=max_depth)
-    depth_offsets = torch.log(raw_depth_clamped) - torch.log(center_depth_clamped) # Log space offsets (not need to normalize)
+    raw_depths = torch.clamp(torch.tensor(ann_data["depth"], dtype=torch.float32), min=1e-3) # [8]
+    center_depth = raw_depths.mean()
+    box_w, box_h = (bbx2d_processed[2] - bbx2d_processed[0]) * dino_img_size, (bbx2d_processed[3] - bbx2d_processed[1]) * dino_img_size
+    box_scale = torch.sqrt(box_w**2 + box_h**2)
+    gt_canonical_depth = torch.log(center_depth * box_scale + 1e-8) # log space canonical depth
+    depth_offsets = torch.log(raw_depths) - torch.log(center_depth) # Log space offsets (not need to normalize)
+    
         
 
     return {
         "2d_bbx": bbx2d_processed,
         "gt_center": bbx3d_center,
-        "gt_offsets_3d": offsets_3d.flatten(),
+        "gt_offsets_3d": offsets_3d,
         "gt_corners_3d": bbx3d_bb8,
-        "gt_center_depth": norm_inv_depth,
+        "gt_center_depth": gt_canonical_depth,
         "gt_depth_offsets": depth_offsets,
-        "gt_metric_depth": center_metric_depth,
-        "quality": ann_data["quality"]
+        "gt_metric_depth": center_depth,
     }
     
 def main():
@@ -69,7 +64,7 @@ def main():
     
     with open(image_map_path, 'r') as f:
         image_map = json.load(f)
-    split = "val"
+    split = "train"
     json_paths = sorted(json_root.glob(f"*{split}.json"))
     
     for json_path in json_paths:

@@ -27,7 +27,7 @@ class BETRLoss(nn.Module):
         valid_mask = 1.0 - F.interpolate(raw_mask, size=(self.heatmap_size, self.heatmap_size), mode="nearest")
         valid_mask = valid_mask.to(device)
 
-        gt_center_raw = batch['gt_center'] * float(STD["center"].to(device)) + MEAN["center"].to(device)  # unnormalize to [0, 1]
+        gt_center_raw = batch['gt_center'] * float(STD["center"]) + MEAN["center"]  # unnormalize to [0, 1]
         weight_map = self.target_gen.generate_heatmap(gt_center_raw, device)
         weight_map = weight_map * valid_mask  # Mask out padding areas
 
@@ -37,7 +37,7 @@ class BETRLoss(nn.Module):
         loss_coarse = (coarse_diff * valid_mask).sum() / (valid_mask.sum() + 1e-8)
         # L_fine
         pred_center_norm = preds['center coords'].squeeze(1) / float(self.input_size)
-        pred_center_norm = (pred_center_norm - MEAN["center"].to(device)) / STD["center"].to(device)
+        pred_center_norm = (pred_center_norm - MEAN["center"]) / STD["center"]
         loss_fine = F.smooth_l1_loss(pred_center_norm, batch['gt_center'])
 
         loss_center = loss_coarse + self.lambda_fine * loss_fine

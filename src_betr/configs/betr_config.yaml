@@ -10,7 +10,7 @@ data_root: "datasets/"
 
 # System
 device: "cuda"
-model_name: "betr_model_v1"
+model_name: "betr_model_v2" # Model with Z-Score and Increasing lambda of fine loss
 seed: 42
 
 # Data

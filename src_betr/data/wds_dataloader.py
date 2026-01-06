@@ -13,6 +13,9 @@ DATASET_STATS = {
     "SUNRGBD":     {"count": 13006,  "type": "indoor"},
 }
 
+MEAN = {"center": 0.497, "bb8_offset": 0.0, "center_depth": 6.181, "bb8_depth_offset": -0.009}
+STD = {"center": 0.144, "bb8_offset": 0.097, "center_depth": 1.002, "bb8_depth_offset": 0.133}
+
 class FlattenSamples:
     def __init__(self, dino_img_size: int = 512):
         self.dino_img_size = dino_img_size
@@ -31,16 +34,20 @@ class FlattenSamples:
             f_dino = features["dino"].float().squeeze(0)
         
             for target in targets_list:
+                gt_center = (target["gt_center"] - MEAN["center"]) / STD["center"]
+                offsets_3d = (target["gt_offsets_3d"] - MEAN["bb8_offset"]) / STD["bb8_offset"]
+                gt_canonical_depth = (target["gt_center_depth"] - MEAN["center_depth"]) / STD["center_depth"]
+                depth_offsets = (target["gt_depth_offsets"] - MEAN["bb8_depth_offset"]) / STD["bb8_depth_offset"]
                 yield {
                     "feat_metric": f_metric,
                     "feat_mono": f_mono,
                     "feat_dino": f_dino,
                     "2d_bbx": target["2d_bbx"],
-                    "gt_center": target["gt_center"],
-                    "gt_offsets_3d": target["gt_offsets_3d"],
+                    "gt_center": gt_center,
+                    "gt_offsets_3d": offsets_3d,
                     "gt_corners_3d": target["gt_corners_3d"],
-                    "gt_center_depth": target["gt_center_depth"],
-                    "gt_depth_offsets": target["gt_depth_offsets"],
+                    "gt_center_depth": gt_canonical_depth,
+                    "gt_depth_offsets": depth_offsets,
                     "gt_metric_depth": target["gt_metric_depth"],
                     "padding_mask": padding_mask,
                 }     
@@ -220,10 +227,4 @@ if __name__ == "__main__":
             print("\n✅ Done!")
         except Exception as e:
             print(f"❌ Error: {e}")
-            
-
-# ...existing code...
-
-
-
-# ...existing code...
+        
