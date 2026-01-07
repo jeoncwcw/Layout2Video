@@ -10,11 +10,11 @@ sys.path.insert(0, str(SRC_BETR_DIR))
 
 from models.betr import BETRModel
 from data.image_dataloader import build_image_dataloader
-from utils import set_seed, visualization, comparing_depth
+from utils import set_seed, visualization
 
 def main():
     config = Path(SRC_BETR_DIR / "configs" / "betr_config.yaml")
-    checkpoint = Path(SRC_BETR_DIR / "checkpoints" / "betr_model_v1" / "betr_model_v1_best.pth")
+    checkpoint = Path(SRC_BETR_DIR / "checkpoints" / "betr_model_v2" / "betr_model_v2_best.pth")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg = OmegaConf.load(config)
     cfg.feature_mode = False
@@ -34,7 +34,7 @@ def main():
     dataloader = build_image_dataloader(root_dir=dataset_root, data_dir=data_dir, shuffle=True, seed=42, batch_size=cfg.batch_size)
     small_batch = next(iter(dataloader))
     batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in small_batch.items()}
-    
+    print(f"image_paths: {batch_gpu['path']}")
     # Inference
     with torch.inference_mode():
         output = model(
@@ -45,10 +45,9 @@ def main():
             feature_mode=False,
         )
     # Visualization & Depth Stats
-    output_dir = PROJ_ROOT / "test" / "inference_vis"
+    output_dir = PROJ_ROOT / "test" / "inference_vis_v2"
     output_dir.mkdir(parents=True, exist_ok=True)
     visualization(small_batch, output, output_dir)
-    comparing_depth(small_batch, output)
     
     
 if __name__ == "__main__":

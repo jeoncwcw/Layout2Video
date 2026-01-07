@@ -10,7 +10,7 @@ data_root: "datasets/"
 
 # System
 device: "cuda"
-model_name: "betr_model_v2" # Model with Z-Score and Increasing lambda of fine loss
+model_name: "betr_model_v3" # Model with Z-Score and Increasing lambda of fine loss
 seed: 42
 
 # Data
@@ -28,7 +28,7 @@ d_model: 256                # Transformer model dimension
 # Model Hyperparameters
 dropout: 0.1
 activation: "relu"
-feature_mode: False  # Whether to use feature generator
+feature_mode: True  # Whether to use feature generator
 
 # Prediction Heads Config
 prediction_heads: [

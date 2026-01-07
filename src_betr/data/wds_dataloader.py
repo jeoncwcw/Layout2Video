@@ -67,7 +67,7 @@ def get_hierarchical_weights(found_datasets):
         datasets = [(name, count) for name, count in datasets if count > 0]
         if not datasets: continue
         
-        raw_weights = [1.0 / math.sqrt(count) for _, count in datasets]
+        raw_weights = [math.sqrt(count) for _, count in datasets]
         total_score = sum(raw_weights)
         
         target_prob = group_probs[g_name]
@@ -101,6 +101,7 @@ def build_wds_feature_dataloader(
             key = next((k for k in DATASET_STATS if k in name), None)
             if key and DATASET_STATS[key]["count"] > 0:
                 weight_map[name] = 1.0 
+    print(f"WDS Dataloader - Using datasets and weights: {weight_map}")
     urls = []
     weights = []    
     for d_dir in dataset_dirs:
@@ -124,7 +125,7 @@ def build_wds_feature_dataloader(
     datasets = []
     for url in urls:
         ds = (wds.WebDataset(url, nodesplitter=wds.split_by_node, shardshuffle=1000, empty_check=False)
-        .shuffle(1000)
+        .shuffle(5000)
         .decode("torch")
         .compose(flatten_transform)
         )

@@ -89,7 +89,7 @@ def train_worker(rank, world_size, cfg):
     val_dataloader = build_wds_feature_dataloader(**total_data_kwargs, split="val", epoch_length=cfg.epoch_length//10)
     
     num_epochs = cfg.num_epochs
-    checkpoint_dir = PROJECT_ROOT / "checkpoints"
+    checkpoint_dir = PROJECT_ROOT / "checkpoints" / cfg.model_name
     best_val_loss = float('inf')
     if rank == 0:   
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -191,7 +191,7 @@ def main():
     cfg_path = PROJECT_ROOT / "configs" / "betr_config.yaml"
     cfg = OmegaConf.load(cfg_path)
     world_size = torch.cuda.device_count()
-    if (PROJECT_ROOT / "checkpoints" / f"{cfg.model_name}_best.pth").exists():
+    if (PROJECT_ROOT / "checkpoints" / cfg.model_name).exists():
         print("Model already trained. Exiting.")
         return
     mp.spawn(train_worker, args=(world_size, cfg), nprocs=world_size, join=True)
