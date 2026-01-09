@@ -1,10 +1,9 @@
-import torch
 from torch import nn
 import torch.nn.functional as F
 from .utils import TargetGenerator
 
-MEAN = {"center": 0.146, "bb8_offset": 0.0, "center_depth": 0.330, "bb8_depth_offset": 0.013}
-STD = {"center": 1.101, "bb8_offset": 0.870, "center_depth": 0.965, "bb8_depth_offset": 0.902}
+MEAN = {"center": 0.518, "bb8_offset": 0.0, "center_depth": 6.511, "bb8_depth_offset": -0.007}
+STD = {"center": 0.159, "bb8_offset": 0.084, "center_depth": 0.968, "bb8_depth_offset": 0.120}
 
 class BETRLoss(nn.Module):
     def __init__(self, lambda_fine=2.0, sigma=2.0, heatmap_size=128, input_size=512, threshold=.1):

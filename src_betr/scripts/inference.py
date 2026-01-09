@@ -14,7 +14,7 @@ from utils import set_seed, visualization
 
 def main():
     config = Path(SRC_BETR_DIR / "configs" / "betr_config.yaml")
-    checkpoint = Path(SRC_BETR_DIR / "checkpoints" / "betr_model_v2" / "betr_model_v2_best.pth")
+    checkpoint = Path(SRC_BETR_DIR / "checkpoints" / "betr_model_v3" / "betr_model_v3_best.pth")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg = OmegaConf.load(config)
     cfg.feature_mode = False
@@ -45,7 +45,7 @@ def main():
             feature_mode=False,
         )
     # Visualization & Depth Stats
-    output_dir = PROJ_ROOT / "test" / "inference_vis_v2"
+    output_dir = PROJ_ROOT / "test" / "inference_vis_v3"
     output_dir.mkdir(parents=True, exist_ok=True)
     visualization(small_batch, output, output_dir)
     

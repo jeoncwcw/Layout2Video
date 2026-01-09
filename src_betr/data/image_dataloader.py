@@ -20,8 +20,12 @@ from data.utils import balanced_sampler, filtered_annotations
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 # TODO: removing hard-coded mean and std values
-MEAN = {"center": 0.146, "bb8_offset": 0.0, "center_depth": 0.330, "bb8_depth_offset": 0.013}
-STD = {"center": 1.101, "bb8_offset": 0.870, "center_depth": 0.965, "bb8_depth_offset": 0.902}
+MEAN = {"center": 0.518, "bb8_offset": 0.0, "center_depth": 6.511, "bb8_depth_offset": -0.007}
+STD = {"center": 0.159, "bb8_offset": 0.084, "center_depth": 0.968, "bb8_depth_offset": 0.120}
+# Prev_stat
+# MEAN = {"center": 0.497, "bb8_offset": 0.0, "center_depth": 6.181, "bb8_depth_offset": -0.009}
+# STD = {"center": 0.144, "bb8_offset": 0.097, "center_depth": 1.002, "bb8_depth_offset": 0.133}
+
 DEFAULT_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp")
 
 def _LetterBoxing(img: Image.Image, target_size: int) -> Image.Image:
@@ -155,10 +159,10 @@ class AnnotationDataset(Dataset):
         padding_mask[pad_top: pad_top + new_h, pad_left: pad_left + new_w] = False # [H, W] (True for padding)
 
         # Matching target scales each other
-        # bbx3d_center = (bbx3d_center - MEAN["center"]) / STD["center"]
-        # offsets_3d = (offsets_3d - MEAN["bb8_offset"]) / STD["bb8_offset"]
-        # gt_canonical_depth = (gt_canonical_depth - MEAN["center_depth"]) / STD["center_depth"]
-        # depth_offsets = (depth_offsets - MEAN["bb8_depth_offset"]) / STD["bb8_depth_offset"]
+        bbx3d_center = (bbx3d_center - MEAN["center"]) / STD["center"]
+        offsets_3d = (offsets_3d - MEAN["bb8_offset"]) / STD["bb8_offset"]
+        gt_canonical_depth = (gt_canonical_depth - MEAN["center_depth"]) / STD["center_depth"]
+        depth_offsets = (depth_offsets - MEAN["bb8_depth_offset"]) / STD["bb8_depth_offset"]
         return {
             # Input Values
             "image_da3": image_da3, "image_dino": image_dino, "path": str(img_path), "2d_bbx": bbx2d_processed,

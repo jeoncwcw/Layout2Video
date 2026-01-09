@@ -11,8 +11,7 @@ from models.dense_modules import DenseHeads, UpsampleLayer, SoftArgmax2D
 
 from models.transformer_modules.encoder import TransformerEncoderLayer
 from models.transformer_modules.decoder import TransformerDecoderLayer
-
-
+import torch
 from torch import nn
 
 class BETRModel(nn.Module):
@@ -36,12 +35,13 @@ class BETRModel(nn.Module):
                 checkpoint_path=Path(cfg.dinov3_checkpoint_path),
                 device=cfg.device,
             )
+            self.feature_dropout = nn.Dropout2d(p = cfg.aug.feature_dropout)
         else:
             print("⚡ Feature Mode On: Skipping Backbone Loading (Memory Saved!)")
             self.feature_monodepth = None
             self.feature_metricdepth = None
             self.feature_dinov3 = None
-
+            
         # Feature Generator
         self.feature_generator = FeatureGenerator(cfg.feature_generator_dim)
         in_channels = (cfg.feature_generator_dim * 2) + 1024  # Assuming DINOv3 outputs 1024 channels
@@ -87,15 +87,27 @@ class BETRModel(nn.Module):
             in_channels=cfg.d_model // 4,  # After two upsampling layers
         )
         self.soft_argmax = SoftArgmax2D(beta=cfg.soft_argmax.beta, is_sigmoid=cfg.soft_argmax.is_sigmoid)
+        
+        # Augmentation parameters
+        self.box_jitter_sigma = cfg.aug.box_jitter_sigma
+        self.feature_noise_sigma = cfg.aug.feature_noise_sigma
+        self.feature_dropout = nn.Dropout2d(p = cfg.aug.feature_dropout)
 
     def forward(self, bbx2d_tight, mask = None,
                 images_da3 = None, images_dino = None,
                 f_metric = None, f_mono = None, f_dino = None,
-                feature_mode = False):
+                ):
         # Generate combined features
         try:
-            if feature_mode:
+            if self.feature_mode:
                 metric_depth, mono_depth, dinov3_features = f_metric, f_mono, f_dino
+                # Add noise augmentation
+                noise = torch.randn_like(bbx2d_tight) * self.box_jitter_sigma
+                bbx2d_tight = torch.clamp(bbx2d_tight + noise, 0, 1)
+                metric_depth = metric_depth + torch.randn_like(metric_depth) * self.feature_noise_sigma
+                mono_depth = mono_depth + torch.randn_like(mono_depth) * self.feature_noise_sigma
+                dinov3_features = dinov3_features + torch.randn_like(dinov3_features) * self.feature_noise_sigma
+                
             else:
                 metric_depth = self.feature_metricdepth(images_da3)
                 mono_depth = self.feature_monodepth(images_da3)

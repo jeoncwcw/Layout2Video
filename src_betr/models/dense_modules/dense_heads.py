@@ -1,9 +1,20 @@
 from torch import nn
+import torch
 
 class DenseHeads(nn.Module):
     def __init__(self, heads, in_channels):
         super(DenseHeads, self).__init__()
         self.heads_dict = nn.ModuleDict()
+        
+        # TODO: Fix hard-coded mean and std values
+        bb8_offset_mean = torch.tensor([
+            -0.0015, -0.0712, -0.0170, -0.0658, -0.0155,  0.0640, -0.0007,  0.0571,
+             0.0142, -0.0634,  0.0053, -0.0576,  0.0031,  0.0721,  0.0121,  0.0649
+        ])
+        
+        bb8_depth_mean = torch.tensor([
+            -0.0164, -0.0241,  0.0098,  0.0147, -0.0227, -0.0306,  0.0035,  0.0084
+        ])
 
         for role in heads:
             if role in ['center heatmap', "center depth"]:
@@ -23,6 +34,14 @@ class DenseHeads(nn.Module):
 
             if "heatmap" in role:
                 fc[-1].bias.data.fill_(-2.19)  # Initialize heatmap head bias
+            elif "role" == "bb8 offsets":
+                spread = 0.6
+                bias_val = torch.sign(bb8_offset_mean) * spread
+                fc[-1].bias.data.copy_(bias_val)
+            elif "role" == "bb8 depth offsets":
+                spread = 0.6
+                bias_val = torch.sign(bb8_depth_mean) * spread
+                fc[-1].bias.data.copy_(bias_val)
             else:
                 self._init_weights(fc)
 
@@ -31,6 +50,7 @@ class DenseHeads(nn.Module):
     def _init_weights(self, module):
         for m in module.modules():
             if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
 

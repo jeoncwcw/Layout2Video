@@ -117,7 +117,6 @@ def train_worker(rank, world_size, cfg):
                     f_metric=batch_gpu["feat_metric"],
                     f_mono=batch_gpu["feat_mono"],
                     f_dino=batch_gpu["feat_dino"],
-                    feature_mode=cfg.feature_mode,
                 )
                 loss_dict = criterion(outputs, batch_gpu)
                 total_loss = loss_dict["total_loss"]
@@ -153,7 +152,6 @@ def train_worker(rank, world_size, cfg):
                         f_metric=val_batch_gpu["feat_metric"],
                         f_mono=val_batch_gpu["feat_mono"],
                         f_dino=val_batch_gpu["feat_dino"],
-                        feature_mode=cfg.feature_mode,
                     )
                     val_loss_dict = criterion(val_outputs, val_batch_gpu)
                     for k, v in val_loss_dict.items():
