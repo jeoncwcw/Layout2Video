@@ -31,19 +31,19 @@ class DenseHeads(nn.Module):
                 nn.ReLU(),
                 nn.Conv2d(in_channels, out_ch, kernel_size=1)
             )
-
+            self._init_weights(fc)
+            
             if "heatmap" in role:
                 fc[-1].bias.data.fill_(-2.19)  # Initialize heatmap head bias
-            elif "role" == "bb8 offsets":
+            elif "bb8 offsets" in role:
                 spread = 0.6
                 bias_val = torch.sign(bb8_offset_mean) * spread
                 fc[-1].bias.data.copy_(bias_val)
-            elif "role" == "bb8 depth offsets":
+            elif "bb8 depth offsets" in role:
                 spread = 0.6
                 bias_val = torch.sign(bb8_depth_mean) * spread
                 fc[-1].bias.data.copy_(bias_val)
-            else:
-                self._init_weights(fc)
+                
 
             self.heads_dict[role] = fc
 
