@@ -4,8 +4,8 @@ from pathlib import Path
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-MEAN = {"center": 0.497, "bb8_offset": 0.0, "center_depth": 6.181, "bb8_depth_offset": -0.009}
-STD = {"center": 0.144, "bb8_offset": 0.097, "center_depth": 1.002, "bb8_depth_offset": 0.133}
+MEAN = {"center": 0.146, "bb8_offset": 0.0, "center_depth": 0.330, "bb8_depth_offset": 0.013}
+STD = {"center": 1.101, "bb8_offset": 0.870, "center_depth": 0.965, "bb8_depth_offset": 0.902}
 
 def visualization(small_batch, outputs, out_dir: Path):
     pred_center = outputs['center coords'].squeeze(1).cpu().numpy() # [B, 2] # unnormalized, dino scale

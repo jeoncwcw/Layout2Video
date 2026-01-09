@@ -37,7 +37,7 @@ def get_hierarchical_weights(found_datasets: List[str], indoor_prob: float = 0.6
         if not datasets:
             continue
         
-        raw_weights = [1.0 / math.sqrt(count) for _, count in datasets]
+        raw_weights = [math.sqrt(count) for _, count in datasets]
         total_score = sum(raw_weights)
         
         target_prob = group_probs[g_name]
