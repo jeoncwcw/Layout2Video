@@ -42,7 +42,6 @@ def main():
             images_dino=batch_gpu["image_dino"],
             bbx2d_tight=batch_gpu["2d_bbx"],
             mask=batch_gpu["padding_mask"],
-            feature_mode=False,
         )
     # Visualization & Depth Stats
     output_dir = PROJ_ROOT / "test" / "inference_vis_v3"

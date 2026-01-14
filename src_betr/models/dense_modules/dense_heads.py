@@ -35,14 +35,8 @@ class DenseHeads(nn.Module):
             
             if "heatmap" in role:
                 fc[-1].bias.data.fill_(-2.19)  # Initialize heatmap head bias
-            elif "bb8 offsets" in role:
-                spread = 0.6
-                bias_val = torch.sign(bb8_offset_mean) * spread
-                fc[-1].bias.data.copy_(bias_val)
-            elif "bb8 depth offsets" in role:
-                spread = 0.6
-                bias_val = torch.sign(bb8_depth_mean) * spread
-                fc[-1].bias.data.copy_(bias_val)
+            else:
+                self._init_weights(fc)
                 
 
             self.heads_dict[role] = fc
@@ -50,10 +44,9 @@ class DenseHeads(nn.Module):
     def _init_weights(self, module):
         for m in module.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
-
+                    
     def forward(self, x):
         outputs = {}
         for role, head in self.heads_dict.items():

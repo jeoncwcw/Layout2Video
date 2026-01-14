@@ -18,7 +18,7 @@ from data.utils import filtered_annotations
 def get_filtered_unique_images(root_json_dir, target_quality="Good", min_area=32*32, dino_size=512):
     unique_paths = set()
     
-    json_paths = list(Path(root_json_dir).glob("*val.json"))
+    json_paths = list(Path(root_json_dir).glob("*train.json"))
     for path in json_paths:
         filtered_data = filtered_annotations(path, target_quality, min_area, dino_size)
         valid_image_ids = [ann["image_id"] for ann in filtered_data["annotations"]]
@@ -48,7 +48,7 @@ def worker(rank, world_size, all_image_rel_paths, cfg, save_root):
     
     with torch.inference_mode():    
         for rel_path in pbar:
-            full_path = Path("./datasets") / rel_path
+            full_path = save_root / rel_path
             if not full_path.exists():
                 pbar.write(f"Image not found: {full_path}")
                 continue
@@ -56,8 +56,7 @@ def worker(rank, world_size, all_image_rel_paths, cfg, save_root):
             
             path_hash = hashlib.md5(str(rel_path).encode()).hexdigest()
             feat_filename = feat_dir / f"feat_{path_hash}.pth"
-            save_path = feat_dir / feat_filename
-            if not save_path.exists():
+            if not feat_filename.exists():
                 img = Image.open(full_path).convert("RGB")
                 img_da3 = transform_da3(img).unsqueeze(0).to(device)
                 img_dino = transform_dino(img).unsqueeze(0).to(device)
@@ -69,7 +68,7 @@ def worker(rank, world_size, all_image_rel_paths, cfg, save_root):
                     "metric": f_metric,
                     "mono": f_mono,
                     "dino": f_dino,
-                }, save_path)
+                }, feat_filename)
                 local_mapping[str(rel_path)] = str(f"feat_{path_hash}.pth")
             
     with open(save_root / f"image_map_rank{rank}.json", "w") as f:
@@ -77,12 +76,12 @@ def worker(rank, world_size, all_image_rel_paths, cfg, save_root):
         
 def extract_features_parallel():
     cfg = OmegaConf.load("./src_betr/configs/betr_config.yaml")
-    save_root = Path("/media/vmg/Extreme Pro/layout2video/")
+    save_root = Path("/home/vmg/Desktop/layout2video/datasets")
     (save_root / "betr_features").mkdir(parents=True, exist_ok=True)
     image_map_path = save_root / "image_map.json"
     
     image_rel_paths = get_filtered_unique_images(
-        root_json_dir="./datasets/L2V_new",
+        root_json_dir=str(save_root / "L2V_new"),
     )
     
     world_size = torch.cuda.device_count()

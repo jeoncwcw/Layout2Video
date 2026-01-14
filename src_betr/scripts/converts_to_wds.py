@@ -56,10 +56,10 @@ def process_sample(ann_data, pad_info, dino_img_size=512):
     
 def main():
     json_root = Path(PROJECT_ROOT / "datasets" / "L2V_new")
-    feature_root = Path("/media/vmg/Extreme Pro/layout2video/betr_features")
-    output_root = Path("/media/vmg/Extreme Pro/layout2video/betr_wds")
+    feature_root = Path("./datasets/betr_features")
+    output_root = Path("./datasets/betr_wds")
     output_root.mkdir(parents=True, exist_ok=True)
-    image_map_path = Path("/media/vmg/Extreme Pro/layout2video/image_map.json")
+    image_map_path = Path("./datasets/image_map.json")
     dino_img_size = 512
     
     with open(image_map_path, 'r') as f:
@@ -107,7 +107,12 @@ def main():
                     "targets.pth": targets_list,
                     "pad_info.pth": pad_info_save
                 }
-                sink.write(sample)
+                try:
+                    sink.write(sample)
+                except Exception as e:
+                    print(f"Error writing sample {key}: {e}")
+                else:
+                    feat_path.unlink()  # Delete feature file after successful write
     print("All datasets processed and saved to WDS format.")
     
 if __name__ == "__main__":

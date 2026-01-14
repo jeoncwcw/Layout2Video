@@ -4,19 +4,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
 from models.feature_modules import FeatureGenerator, DA3FeatureExtractor, DINOv3FeatureExtractor
 from models.transformer_modules import (
-    TransformerEncoder, TransformerDecoder, 
-    build_position_encoding, BoxEmbedding, _prepare_mask_for_transformer, _unpatchify,
+    TransformerEncoder, Transformerv2Decoder, Transformerv2DecoderLayer, TransformerEncoderLayer,
+    build_position_encoding, BoxEmbedding, _prepare_mask_for_transformer,
 )
 from models.dense_modules import DenseHeads, UpsampleLayer, SoftArgmax2D
-
-from models.transformer_modules.encoder import TransformerEncoderLayer
-from models.transformer_modules.decoder import TransformerDecoderLayer
 import torch
 from torch import nn
 
-class BETRModel(nn.Module):
+class BETRModel2(nn.Module):
     def __init__(self, cfg):
-        super(BETRModel, self).__init__()
+        super(BETRModel2, self).__init__()
         # Feature Extractors
         self.feature_mode = cfg.feature_mode
         if not self.feature_mode:
@@ -58,14 +55,14 @@ class BETRModel(nn.Module):
         )
         self.transformer_encoder = TransformerEncoder(encoder_layer, cfg.encoder.num_layers)
 
-        decoder_layer = TransformerDecoderLayer(
+        decoder_layer = Transformerv2DecoderLayer(
             d_model=cfg.d_model,
             nhead=cfg.decoder.nhead,
             dim_feedforward=cfg.decoder.dim_feedforward,
             dropout=cfg.dropout,
             activation=cfg.activation
         )
-        self.transformer_decoder = TransformerDecoder(decoder_layer, cfg.decoder.num_layers)
+        self.transformer_decoder = Transformerv2Decoder(decoder_layer, cfg.decoder.num_layers)
 
         # Positional Encoding and Box Embedding
         self.position_encoding = build_position_encoding(
@@ -80,14 +77,12 @@ class BETRModel(nn.Module):
             scale=cfg.box_embedding.scale,
         )
 
-        # Upsample and Prediction Heads
-        self.upsample = UpsampleLayer(d_model=cfg.d_model, activation=cfg.activation)
-        self.prediction_heads = DenseHeads(
-            heads=cfg.prediction_heads,
-            in_channels=cfg.d_model // 4,  # After two upsampling layers
+        # Prediction Head
+        self.pred_head = nn.Sequential(
+            nn.Linear(cfg.d_model*4, cfg.d_model),
+            nn.ReLU(),
+            nn.Linear(cfg.d_model, cfg.num_outputs),
         )
-        self.soft_argmax = SoftArgmax2D(beta=cfg.soft_argmax.beta, is_sigmoid=cfg.soft_argmax.is_sigmoid)
-        
         
         # # Augmentation parameters
         # self.box_jitter_sigma = cfg.aug.box_jitter_sigma
@@ -137,15 +132,9 @@ class BETRModel(nn.Module):
         image_feat = self.transformer_encoder(combined_features, image_feat_key_padding_mask=padding_mask, pos=pos_encoding)
         output = self.transformer_decoder(image_feat, box_embeddings, image_feat_key_padding_mask=padding_mask, image_feat_pos=pos_encoding)
         breakpoint()
-        output = _unpatchify(output) # (B, C, H, W)
-
-        # Upsample, Prediction Heads, Soft Argmax and get center coords
-        output = self.upsample(output)
-        output = self.prediction_heads(output)
-        center_heatmap = output['center heatmap'] # [B, 1, 128, 128]
-        center_coords = self.soft_argmax(center_heatmap) # [B, 1, 2]
-        center_coords_orig = center_coords*4
-        output['center coords'] = center_coords_orig
+        output = output.permute(1, 0, 2).view(output.size(1), -1)  # (B, 4*C)
+        output = self.pred_head(output)  # (B, num_outputs)
+        breakpoint()
 
         return output
     

@@ -33,7 +33,9 @@ d_model: 256                # Transformer model dimension
 # Model Hyperparameters
 dropout: 0.1
 activation: "relu"
-feature_mode: True  # Whether to use feature generator a.k.a. training mode
+feature_mode: False  # Whether to use feature generator a.k.a. training mode
+num_outputs: 27
+# Number of outputs for prediction head (center coords: 2, center depth: 1, bb8 offsets: 16, bb8 depth offsets: 8)
 
 # Prediction Heads Config
 prediction_heads: [
@@ -69,7 +71,7 @@ box_embedding:
 
 # Loss configs
 loss_weights:
-  lambda_: 2.0 # Weights for fine loss
+  lambda_: 5.0 # Weights for fine loss
   sigma_: 2.0 # heatmap std
 
 # Hyperparameters

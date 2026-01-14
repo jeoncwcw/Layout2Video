@@ -23,7 +23,7 @@ def run_overfitting_test():
     cfg = OmegaConf.load(config_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg.device = str(device)
-    cfg.batch_size = 4
+    cfg.batch_size = 8
     model = BETRModel(cfg).to(device)
     gt_size = cfg.data.dino_image_size
     criterion = BETRLoss(cfg.loss_weights.lambda_, cfg.loss_weights.sigma_,
@@ -52,7 +52,6 @@ def run_overfitting_test():
             images_da3 = batch_gpu["image_da3"],
             bbx2d_tight = batch_gpu["2d_bbx"],
             mask = batch_gpu["padding_mask"],
-            feature_mode = False
         )
         
         loss_dict = criterion(outputs, batch_gpu)
@@ -80,7 +79,6 @@ def run_overfitting_test():
             images_da3 = batch_gpu["image_da3"],
             bbx2d_tight = batch_gpu["2d_bbx"],
             mask = batch_gpu["padding_mask"],
-            feature_mode = False
         )
     return small_batch, outputs
     
