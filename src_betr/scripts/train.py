@@ -14,8 +14,8 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from models.betr import BETRModel
-from losses.criterion import BETRLoss
+from models.betr_v2 import BETRModel2
+from losses.criterion_v2 import BETRv2Loss
 from data.wds_dataloader import build_wds_feature_dataloader
 from utils import set_seed
 
@@ -63,14 +63,14 @@ def train_worker(rank, world_size, cfg):
     torch.cuda.set_device(rank)
     device = torch.device(f"cuda:{rank}")
     
-    model = BETRModel(cfg).to(device)
+    model = BETRModel2(cfg).to(device)
     model = DDP(model, device_ids=[rank], find_unused_parameters=False)
     gt_size = cfg.data.dino_image_size
-    criterion = BETRLoss(
-        cfg.loss_weights.lambda_, 
-        cfg.loss_weights.sigma_,
-        heatmap_size=gt_size/4, 
-        input_size=gt_size
+    criterion = BETRv2Loss(
+        center=cfg.loss_v2_weights.center,
+        offset=cfg.loss_v2_weights.offset,
+        depth=cfg.loss_v2_weights.depth,
+        d_offset=cfg.loss_v2_weights.d_offset
     ).to(device)
     optimizer = optim.AdamW(
         model.parameters(),
@@ -188,6 +188,7 @@ def train_worker(rank, world_size, cfg):
 def main():
     cfg_path = PROJECT_ROOT / "configs" / "betr_config.yaml"
     cfg = OmegaConf.load(cfg_path)
+    cfg.feature_mode = True
     world_size = torch.cuda.device_count()
     if (PROJECT_ROOT / "checkpoints" / cfg.model_name).exists():
         print("Model already trained. Exiting.")

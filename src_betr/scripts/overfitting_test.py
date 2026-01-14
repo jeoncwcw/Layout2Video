@@ -8,8 +8,8 @@ import sys
 BETR_ROOT = Path(__file__).resolve().parents[1]
 PROJ_ROOT = BETR_ROOT.parent
 sys.path.insert(0, str(BETR_ROOT))
-from models.betr import BETRModel
-from losses.criterion import BETRLoss
+from models.betr_v2 import BETRModel2
+from losses.criterion_v2 import BETRv2Loss
 from data.image_dataloader import build_image_dataloader
 from utils import set_seed, visualization
 
@@ -22,12 +22,16 @@ def run_overfitting_test():
     config_path = BETR_ROOT / "configs" / "betr_config.yaml"
     cfg = OmegaConf.load(config_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    cfg.feature_mode = False
     cfg.device = str(device)
     cfg.batch_size = 8
-    model = BETRModel(cfg).to(device)
-    gt_size = cfg.data.dino_image_size
-    criterion = BETRLoss(cfg.loss_weights.lambda_, cfg.loss_weights.sigma_,
-                         heatmap_size=gt_size/4, input_size=gt_size).to(device)
+    model = BETRModel2(cfg).to(device)
+    criterion = BETRv2Loss(
+        center=cfg.loss_v2_weights.center,
+        offset=cfg.loss_v2_weights.offset,
+        depth=cfg.loss_v2_weights.depth,
+        d_offset=cfg.loss_v2_weights.d_offset
+    ).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
     
     root_dir = Path(cfg.json_root)
@@ -81,13 +85,6 @@ def run_overfitting_test():
             mask = batch_gpu["padding_mask"],
         )
     return small_batch, outputs
-    
-def inverse_depth_norm(norm_inv_depth, min_depth=0.1, max_depth=3000.0):
-    inv_min = 1.0 / max_depth
-    inv_max = 1.0 / min_depth
-    inv_depth = norm_inv_depth * (inv_max - inv_min) + inv_min
-    depth = 1.0 / (inv_depth + 1e-8)
-    return depth
         
 
 if __name__ == "__main__":

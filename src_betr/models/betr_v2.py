@@ -131,10 +131,8 @@ class BETRModel2(nn.Module):
         # Pass through Transformer and unpatchify
         image_feat = self.transformer_encoder(combined_features, image_feat_key_padding_mask=padding_mask, pos=pos_encoding)
         output = self.transformer_decoder(image_feat, box_embeddings, image_feat_key_padding_mask=padding_mask, image_feat_pos=pos_encoding)
-        breakpoint()
         output = output.permute(1, 0, 2).view(output.size(1), -1)  # (B, 4*C)
         output = self.pred_head(output)  # (B, num_outputs)
-        breakpoint()
 
         return output
     

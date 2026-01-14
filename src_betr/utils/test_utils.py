@@ -11,9 +11,17 @@ STD = {"center": 0.159, "bb8_offset": 0.084, "center_depth": 0.968, "bb8_depth_o
 # STD = {"center": 0.144, "bb8_offset": 0.097, "center_depth": 1.002, "bb8_depth_offset": 0.133}
 
 def visualization(small_batch, outputs, out_dir: Path):
-    pred_center = outputs['center coords'].squeeze(1).cpu().numpy() # [B, 2] # unnormalized, dino scale
-    pred_offsets = outputs['bb8 offsets'].cpu().numpy() # [B, 16, H, W] # normalized, feature scale (1/4 dino)
-    pred_offsets = pred_offsets * STD["bb8_offset"] + MEAN["bb8_offset"]
+    preds = outputs # (B, 27)
+    p_center_raw = preds[:, 0:2]  # [B, 2]
+    p_offsets_raw = preds[:, 2:18]  # [B, 16]
+    p_depth_raw = preds[:, 18:19]  # [B, 1]
+    p_d_offset_raw = preds[:, 19:27]  # [B, 8]
+    
+    # Unnormalize predictions
+    pred_center = p_center_raw * STD["center"] + MEAN["center"]
+    pred_offsets = (p_offsets_raw * STD["bb8_offset"] + MEAN["bb8_offset"]).view(-1, 8, 2)  # [B, 8, 2]
+    pred_center = pred_center.detach().cpu().numpy()
+    pred_offsets = pred_offsets.detach().cpu().numpy()
     for i in range(4):
         # Convert tensor to image
         image = small_batch['image_dino'][i].permute(1,2,0).cpu().numpy()
@@ -24,14 +32,15 @@ def visualization(small_batch, outputs, out_dir: Path):
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         # load gt, predicted corners
         corners_3d = small_batch['gt_corners_3d'][i].cpu().numpy() * 512
-        heatmap_center_x, heatmap_center_y = int(np.clip(round(pred_center[i][0]/4), 0, 127)), int(np.clip(round(pred_center[i][1]/4), 0, 127))
-        pred_offset = pred_offsets[i,:,heatmap_center_y, heatmap_center_x].reshape(8, 2) # [8, 2]
-        pred_corners = pred_offset * 512 + pred_center[i][None, :] # unnormalize and to dino scale
+        pred_center_pixel = pred_center[i] * 512
+        pred_offsets_pixel = pred_offsets[i] * 512
+        pred_corners = pred_center_pixel[None, :] + pred_offsets_pixel  # [8, 2]
         # Draw GT, Predicted corners
         for j in range(8):
             gt_u, gt_v = int(round(corners_3d[j][0])), int(round(corners_3d[j][1]))
             pd_u, pd_v = int(round(pred_corners[j][0])), int(round(pred_corners[j][1]))
             cv2.circle(image, (gt_u, gt_v), 5, (0,255,0), -1) # Green for GT
             cv2.circle(image, (pd_u, pd_v), 5, (0,0,255), -1) # Red for Pred
+        cv2.drawMarker(image, tuple(pred_center_pixel.astype(int)), (255, 0, 0), cv2.MARKER_CROSS, 10, 2)
         cv2.imwrite(str(out_dir / f"vis_{i:03d}.png"), image)
     print(f"Visualization images saved to: {out_dir}")

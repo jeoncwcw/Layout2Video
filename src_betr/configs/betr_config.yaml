@@ -10,7 +10,7 @@ data_root: "datasets/"
 
 # System
 device: "cuda"
-model_name: "betr_model_v4" # Model with Z-Score and Increasing lambda of fine loss
+model_name: "betr_model_direct_v1" # Model with Z-Score and Increasing lambda of fine loss
 seed: 42
 
 # Data
@@ -33,7 +33,7 @@ d_model: 256                # Transformer model dimension
 # Model Hyperparameters
 dropout: 0.1
 activation: "relu"
-feature_mode: False  # Whether to use feature generator a.k.a. training mode
+feature_mode: True  # Whether to use feature generator a.k.a. training mode
 num_outputs: 27
 # Number of outputs for prediction head (center coords: 2, center depth: 1, bb8 offsets: 16, bb8 depth offsets: 8)
 
@@ -73,11 +73,15 @@ box_embedding:
 loss_weights:
   lambda_: 5.0 # Weights for fine loss
   sigma_: 2.0 # heatmap std
-
+loss_v2_weights:
+  center: 1.0
+  offset: 1.0
+  depth: 1.0
+  d_offset: 1.0
 # Hyperparameters
 num_epochs: 100
 batch_size: 16
-learning_rate: 1e-4
+learning_rate: 1e-5
 weight_decay: 1e-4
 num_workers: 4
 
