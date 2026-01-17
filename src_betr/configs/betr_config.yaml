@@ -5,7 +5,7 @@ metricdepth_cfg_path: "src_betr/configs/da3metric-large.yaml"
 metricdepth_checkpoint_path: "src_betr/checkpoints/DA3Metric_Large.safetensors"
 dinov3_checkpoint_path: "src_betr/checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
 wds_root: "datasets/betr_wds"
-json_root: "datasets/L2V_new"
+json_root: "datasets/L2V_ordered"
 data_root: "datasets/"
 
 # System

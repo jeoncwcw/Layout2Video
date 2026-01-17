@@ -55,7 +55,7 @@ def process_sample(ann_data, pad_info, dino_img_size=512):
     }
     
 def main():
-    json_root = Path(PROJECT_ROOT / "datasets" / "L2V_new")
+    json_root = Path(PROJECT_ROOT / "datasets" / "L2V_ordered")
     feature_root = Path("./datasets/betr_features")
     output_root = Path("./datasets/betr_wds")
     output_root.mkdir(parents=True, exist_ok=True)

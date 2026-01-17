@@ -136,7 +136,7 @@ class BETRModel(nn.Module):
         # Pass through Transformer and unpatchify
         image_feat = self.transformer_encoder(combined_features, image_feat_key_padding_mask=padding_mask, pos=pos_encoding)
         output = self.transformer_decoder(image_feat, box_embeddings, image_feat_key_padding_mask=padding_mask, image_feat_pos=pos_encoding)
-        breakpoint()
+
         output = _unpatchify(output) # (B, C, H, W)
 
         # Upsample, Prediction Heads, Soft Argmax and get center coords

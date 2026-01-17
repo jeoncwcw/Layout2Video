@@ -93,14 +93,14 @@ def build_wds_feature_dataloader(
         raise ValueError(f"No WDS dataset found in {wds_root} for split {split}")
     found_dataset_names = [d.name for d in dataset_dirs]
     
-    if split == "train":
-        weight_map = get_hierarchical_weights(found_dataset_names)
-    else:
-        weight_map = {}
-        for name in found_dataset_names:
-            key = next((k for k in DATASET_STATS if k in name), None)
-            if key and DATASET_STATS[key]["count"] > 0:
-                weight_map[name] = 1.0 
+    # if split == "train":
+    weight_map = get_hierarchical_weights(found_dataset_names)
+    # else:
+    #     weight_map = {}
+    #     for name in found_dataset_names:
+    #         key = next((k for k in DATASET_STATS if k in name), None)
+    #         if key and DATASET_STATS[key]["count"] > 0:
+    #             weight_map[name] = 1.0 
     print(f"WDS Dataloader - Using datasets and weights: {weight_map}")
     urls = []
     weights = []    
@@ -116,6 +116,7 @@ def build_wds_feature_dataloader(
             url = str(d_dir / f"shard-{{000000..{last_shard_idx:06d}}}.tar")
         urls.append(url)
         w = weight_map[d_name]
+
         weights.append(w)
         
     sum_w = sum(weights)
@@ -125,9 +126,10 @@ def build_wds_feature_dataloader(
     datasets = []
     for url in urls:
         ds = (wds.WebDataset(url, nodesplitter=wds.split_by_node, shardshuffle=1000, empty_check=False)
-        .shuffle(5000)
+        .shuffle(2000)
         .decode("torch")
         .compose(flatten_transform)
+        .shuffle(10000)
         )
         datasets.append(ds)
     

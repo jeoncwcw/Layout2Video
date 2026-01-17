@@ -9,7 +9,9 @@ BETR_ROOT = Path(__file__).resolve().parents[1]
 PROJ_ROOT = BETR_ROOT.parent
 sys.path.insert(0, str(BETR_ROOT))
 from models.betr_v2 import BETRModel2
+from models.betr import BETRModel
 from losses.criterion_v2 import BETRv2Loss
+from losses.criterion import BETRLoss
 from data.image_dataloader import build_image_dataloader
 from utils import set_seed, visualization
 
@@ -30,7 +32,7 @@ def run_overfitting_test():
         center=cfg.loss_v2_weights.center,
         offset=cfg.loss_v2_weights.offset,
         depth=cfg.loss_v2_weights.depth,
-        d_offset=cfg.loss_v2_weights.d_offset
+        d_offset=cfg.loss_v2_weights.d_offset, 
     ).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
     
@@ -57,6 +59,10 @@ def run_overfitting_test():
             bbx2d_tight = batch_gpu["2d_bbx"],
             mask = batch_gpu["padding_mask"],
         )
+        if epoch % 100 == 0: 
+            cfg.learning_rate *= 0.5
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = cfg.learning_rate
         
         loss_dict = criterion(outputs, batch_gpu)
         total_loss = loss_dict["total_loss"]

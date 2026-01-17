@@ -30,55 +30,44 @@ def split_from_path(annotation_path: Path) -> str:
 
   
 def main():
-    # Parse arguments (Dataset path)
     argparser = argparse.ArgumentParser()
-    argparser.add_argument(
-        "--annotation_file", type=Path, required=True,
-        help="Path to the annotation json file."
-    )
     argparser.add_argument(
         "--root_dir", type=Path, required=False, default="./datasets/L2V",
     )
     args = argparser.parse_args()
-    annotation_file = args.annotation_file
     root_dir = args.root_dir
-    
-    # Load annotations
-    with open(root_dir / annotation_file, 'r') as f:
-        annotations = json.load(f)
-        image_info_map = {img["id"]: img for img in annotations["images"]}
-        objects = annotations["annotations"]
-    
-    # Build quality groups
-    quality_group = {
-        "Good": [],
-        "Moderate": [],
-        "Poor": []
-        }
-    
-    for obj in objects:
-        img = image_info_map[obj["image_id"]]
-        obj_corners = obj["projected_corners"]
-        group = assign_group(
-            obj_corners, width=img["width"], height=img["height"]
-        )
-        obj["quality"] = group
-        quality_group[group].append(obj["id"])
-        
-    
-    # Print Stats and save
-    split = split_from_path(annotation_file).capitalize()
-    print("="*10+f" {split} "+"="*10)
-    print("Good:", len(quality_group["Good"]))
-    print("Moderate:", len(quality_group["Moderate"]))
-    print("Poor:", len(quality_group["Poor"]))
-    
+
     labeled_dir = root_dir / "labeled"
     os.makedirs(labeled_dir, exist_ok=True)
-    
-    with open(labeled_dir / annotation_file, 'w') as f:
-        json.dump(annotations, f, indent=4)
-    print(f"Saved labeled annotations to {labeled_dir / annotation_file}")
+
+    for ann_path in sorted(root_dir.glob("*.json")):
+        # Load annotations
+        with open(ann_path, "r") as f:
+            annotations = json.load(f)
+            image_info_map = {img["id"]: img for img in annotations["images"]}
+            objects = annotations["annotations"]
+
+        # Build quality groups
+        quality_group = {"Good": [], "Moderate": [], "Poor": []}
+
+        for obj in objects:
+            img = image_info_map[obj["image_id"]]
+            obj_corners = obj["projected_corners"]
+            group = assign_group(obj_corners, width=img["width"], height=img["height"])
+            obj["quality"] = group
+            quality_group[group].append(obj["id"])
+
+        # Print Stats and save
+        split = split_from_path(ann_path).capitalize()
+        print("=" * 10 + f" {split} " + "=" * 10 + f"  ({ann_path.name})")
+        print("Good:", len(quality_group["Good"]))
+        print("Moderate:", len(quality_group["Moderate"]))
+        print("Poor:", len(quality_group["Poor"]))
+
+        out_path = labeled_dir / ann_path.name
+        with open(out_path, "w") as f:
+            json.dump(annotations, f, indent=4)
+        print(f"Saved labeled annotations to {out_path}")
         
         
 if __name__ == "__main__":

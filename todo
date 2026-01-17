@@ -1,0 +1,17 @@
+## MODEL ##
+ - update BETR: from heatmap to direct Regression
+ Why?
+    Misallignment between train and validation
+ Details:
+    ROI allign (at unpatchified decoder output) + MLP (final output diml': 27 ["center": 2, "offsets": 16, "center depth": 1, "depth offsets": 8])
+
+## dataloader ##
+ Matching sampling strategry between training set & validation set
+
+--- FAILED..
+
+NEW updating point. (
+   너무 힘들다..
+)
+1. making a criterion of ordering corners (which point should a model predict?)
+2. make model to predict each bb8 points (8 heatmaps)
