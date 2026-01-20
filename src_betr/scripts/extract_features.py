@@ -81,7 +81,7 @@ def extract_features_parallel():
     image_map_path = save_root / "image_map.json"
     
     image_rel_paths = get_filtered_unique_images(
-        root_json_dir=str(save_root / "L2V_ordered"),
+        root_json_dir=str(save_root / "L2V_2d_ordered"),
     )
     
     world_size = torch.cuda.device_count()

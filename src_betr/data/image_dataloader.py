@@ -19,9 +19,9 @@ from data.utils import balanced_sampler, filtered_annotations
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-# TODO: removing hard-coded mean and std values
-MEAN = {"center": 0.518, "bb8_offset": 0.0, "center_depth": 6.511, "bb8_depth_offset": -0.007}
-STD = {"center": 0.159, "bb8_offset": 0.084, "center_depth": 0.968, "bb8_depth_offset": 0.120}
+# # TODO: removing hard-coded mean and std values
+# MEAN = {"center": 0.518, "bb8_offset": 0.0, "center_depth": 6.511, "bb8_depth_offset": -0.007}
+# STD = {"center": 0.159, "bb8_offset": 0.084, "center_depth": 0.968, "bb8_depth_offset": 0.120}
 # Prev_stat
 # MEAN = {"center": 0.497, "bb8_offset": 0.0, "center_depth": 6.181, "bb8_depth_offset": -0.009}
 # STD = {"center": 0.144, "bb8_offset": 0.097, "center_depth": 1.002, "bb8_depth_offset": 0.133}
@@ -104,14 +104,9 @@ class AnnotationDataset(Dataset):
                 self.ann_list.append({
                     "image_id": obj["image_id"],
                     "2d_bbx": obj["bbox2D_tight"],
-                    "3d_bb8": self._convert_projected_corners(obj["projected_corners"]),
-                    "quality": obj["quality"],
+                    "3d_bb8": obj["projected_corners"],
                     "depth": obj["depth"],
                 })
-
-    def _convert_projected_corners(self, corners_list: List[Dict]):
-        coords = [(float(c["u"]), float(c["v"])) for c in corners_list]
-        return torch.tensor(coords, dtype=torch.float32)
 
     def __len__(self) -> int:
         return len(self.ann_list)
@@ -119,56 +114,48 @@ class AnnotationDataset(Dataset):
     def __getitem__(self, index: int) -> dict[str, torch.Tensor | str]:
         # Processing input images
         ann_data = self.ann_list[index]
-        img_id = ann_data["image_id"]
-        img_info = self.image_map[img_id]
-        img_path = img_info["path"]
-        image = Image.open(img_path).convert("RGB")
+        img_info = self.image_map[ann_data["image_id"]]
+        image = Image.open(img_info["path"]).convert("RGB")
 
         image_da3 = self.transform_da3(image)
         image_dino = self.transform_dino(image)
 
         # Applying Letterboxing transformations to bounding boxes
-        bbx2d_orig = np.array(ann_data["2d_bbx"], dtype=np.float32)
-        longest = max(image.width, image.height)
-        scale = self.dino_image_size / float(longest) 
-        new_w, new_h = int(round(image.width * scale)), int(round(image.height * scale))
-        pad_left, pad_top = (self.dino_image_size - new_w) // 2, (self.dino_image_size - new_h) // 2
-        bbx2d_processed = bbx2d_orig * scale
-        bbx2d_processed[[0, 2]] += pad_left
-        bbx2d_processed[[1, 3]] += pad_top
-        bbx2d_processed = torch.tensor(bbx2d_processed, dtype=torch.float32) / self.dino_image_size
-        bbx3d_bb8 = ann_data["3d_bb8"] * scale # [8, 2]
-        bbx3d_bb8[:, 0] += pad_left
-        bbx3d_bb8[:, 1] += pad_top
-        bbx3d_bb8 = bbx3d_bb8 / self.dino_image_size # Normalize to [0,1] range
-        bbx3d_center = bbx3d_bb8.mean(dim=0) # [2]
-        offsets_3d = bbx3d_bb8 - bbx3d_center.unsqueeze(0) # Normalized offsets
-        offsets_3d = offsets_3d.flatten()  # [16]
-
-        # depth (Metric to Stable Monodepth Style)
-        raw_depths = torch.clamp(torch.tensor(ann_data["depth"], dtype=torch.float32), min=1e-3) # [8]
-        center_depth = raw_depths.mean()
-        box_w, box_h = (bbx2d_processed[2] - bbx2d_processed[0]) * self.dino_image_size, (bbx2d_processed[3] - bbx2d_processed[1]) * self.dino_image_size
-        box_scale = torch.sqrt(box_w**2 + box_h**2)
-        gt_canonical_depth = torch.log(center_depth * box_scale + 1e-8) # log space canonical depth
+        w, h = image.size
+        longest = max(w, h)
+        scale = self.dino_image_size / float(longest)
+        new_w, new_h = int(round(w * scale)), int(round(h * scale))
+        pad_left = (self.dino_image_size - new_w) // 2
+        pad_top = (self.dino_image_size - new_h) // 2
         
-        depth_offsets = torch.log(raw_depths) - torch.log(center_depth) # Log space offsets (not need to normalize)
+        raw_corners = torch.tensor([(float(c["u"]), float(c["v"])) for c in ann_data["3d_bb8"]], dtype=torch.float32)
+        gt_corners = raw_corners * scale
+        gt_corners[:, 0] += pad_left
+        gt_corners[:, 1] += pad_top
+        gt_corners = gt_corners / self.dino_image_size  
+        #### Normalize to [0,1] ####
         
-        # Generating key padding_mask for transformer
+        # 2D Bounding Box
+        bbx2d = torch.tensor(ann_data["2d_bbx"], dtype=torch.float32) * scale
+        bbx2d[[0,2]] += pad_left
+        bbx2d[[1,3]] += pad_top
+        bbx2d = bbx2d / self.dino_image_size
+        #### Normalize to [0,1] ####
+        
+        # depths
+        raw_depths = torch.clamp(torch.tensor(ann_data["depth"], dtype=torch.float32), min=1e-3)
+        
+        gt_depth_corners = torch.log(raw_depths + 1e-8)
         padding_mask = torch.ones((self.dino_image_size, self.dino_image_size), dtype=torch.bool)
-        padding_mask[pad_top: pad_top + new_h, pad_left: pad_left + new_w] = False # [H, W] (True for padding)
-
-        # Matching target scales each other
-        bbx3d_center = (bbx3d_center - MEAN["center"]) / STD["center"]
-        offsets_3d = (offsets_3d - MEAN["bb8_offset"]) / STD["bb8_offset"]
-        gt_canonical_depth = (gt_canonical_depth - MEAN["center_depth"]) / STD["center_depth"]
-        depth_offsets = (depth_offsets - MEAN["bb8_depth_offset"]) / STD["bb8_depth_offset"]
+        padding_mask[pad_top:pad_top+new_h, pad_left:pad_left+new_w] = False
+        
+        
         return {
             # Input Values
-            "image_da3": image_da3, "image_dino": image_dino, "path": str(img_path), "2d_bbx": bbx2d_processed,
+            "image_da3": image_da3, "image_dino": image_dino, "path": str(img_info["path"]), "2d_bbx": bbx2d,
             # GT infos
-            "gt_center": bbx3d_center, "gt_offsets_3d": offsets_3d, "gt_corners_3d": bbx3d_bb8,
-            "gt_center_depth": gt_canonical_depth, "gt_depth_offsets": depth_offsets, "gt_metric_depth": center_depth,
+            "gt_corners": gt_corners,  # Normalized [0,1]
+            "gt_depths": gt_depth_corners,  # Log space depths
             # padding mask
             "padding_mask": padding_mask,
             }

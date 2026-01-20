@@ -2,8 +2,13 @@ from torch import nn
 import torch
 
 class UpsampleLayer(nn.Module):
-    def __init__(self, d_model, activation="relu"):
+    def __init__(self, d_model, skip_channels=None, activation="relu"):
         super(UpsampleLayer, self).__init__()
+        self.fusion = nn.Sequential(
+            nn.Conv2d(d_model + skip_channels, d_model, kernel_size=1),
+            LayerNorm2d(d_model),
+            _get_activation_fn(activation),
+        )
         self.neck = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
             nn.Conv2d(d_model, d_model // 2, kernel_size=3, padding=1),
@@ -14,7 +19,10 @@ class UpsampleLayer(nn.Module):
             LayerNorm2d(d_model // 4),
             _get_activation_fn(activation),
         )
-    def forward(self, x):
+    def forward(self, x, skip_feature=None):
+        if skip_feature is not None:
+            x = torch.cat([x, skip_feature], dim=1)
+            x = self.fusion(x)
         return self.neck(x)
 
 class LayerNorm2d(nn.Module):

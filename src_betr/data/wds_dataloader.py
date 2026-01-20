@@ -13,8 +13,6 @@ DATASET_STATS = {
     "SUNRGBD":     {"count": 13006,  "type": "indoor"},
 }
 
-MEAN = {"center": 0.518, "bb8_offset": 0.0, "center_depth": 6.511, "bb8_depth_offset": -0.007}
-STD = {"center": 0.159, "bb8_offset": 0.084, "center_depth": 0.968, "bb8_depth_offset": 0.120}
 
 class FlattenSamples:
     def __init__(self, dino_img_size: int = 512):
@@ -34,21 +32,13 @@ class FlattenSamples:
             f_dino = features["dino"].float().squeeze(0)
         
             for target in targets_list:
-                gt_center = (target["gt_center"] - MEAN["center"]) / STD["center"]
-                offsets_3d = (target["gt_offsets_3d"] - MEAN["bb8_offset"]) / STD["bb8_offset"]
-                gt_canonical_depth = (target["gt_center_depth"] - MEAN["center_depth"]) / STD["center_depth"]
-                depth_offsets = (target["gt_depth_offsets"] - MEAN["bb8_depth_offset"]) / STD["bb8_depth_offset"]
                 yield {
                     "feat_metric": f_metric,
                     "feat_mono": f_mono,
                     "feat_dino": f_dino,
                     "2d_bbx": target["2d_bbx"],
-                    "gt_center": gt_center,
-                    "gt_offsets_3d": offsets_3d,
-                    "gt_corners_3d": target["gt_corners_3d"],
-                    "gt_center_depth": gt_canonical_depth,
-                    "gt_depth_offsets": depth_offsets,
-                    "gt_metric_depth": target["gt_metric_depth"],
+                    "gt_corners": target["gt_corners"],
+                    "gt_depths": target["gt_depths"],
                     "padding_mask": padding_mask,
                 }     
             
@@ -93,14 +83,7 @@ def build_wds_feature_dataloader(
         raise ValueError(f"No WDS dataset found in {wds_root} for split {split}")
     found_dataset_names = [d.name for d in dataset_dirs]
     
-    # if split == "train":
     weight_map = get_hierarchical_weights(found_dataset_names)
-    # else:
-    #     weight_map = {}
-    #     for name in found_dataset_names:
-    #         key = next((k for k in DATASET_STATS if k in name), None)
-    #         if key and DATASET_STATS[key]["count"] > 0:
-    #             weight_map[name] = 1.0 
     print(f"WDS Dataloader - Using datasets and weights: {weight_map}")
     urls = []
     weights = []    

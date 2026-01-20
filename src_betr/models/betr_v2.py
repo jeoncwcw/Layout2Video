@@ -79,15 +79,15 @@ class BETRModel2(nn.Module):
 
         # Prediction Head
         self.pred_head = nn.Sequential(
-            nn.Linear(cfg.d_model*5*5, 1024),
+            nn.Linear(cfg.d_model*5*5, 2048),
             nn.ReLU(),
-            nn.Linear(1024, cfg.num_outputs),
+            nn.Linear(2048, cfg.num_outputs),
         )
         
         # # Augmentation parameters
-        # self.box_jitter_sigma = cfg.aug.box_jitter_sigma
-        # self.feature_noise_sigma = cfg.aug.feature_noise_sigma
-        # self.feature_dropout = nn.Dropout2d(p = cfg.aug.feature_dropout)
+        self.box_jitter_sigma = cfg.aug.box_jitter_sigma
+        self.feature_noise_sigma = cfg.aug.feature_noise_sigma
+        self.feature_dropout = nn.Dropout2d(p = cfg.aug.feature_dropout)
 
     def forward(self, bbx2d_tight, mask = None,
                 images_da3 = None, images_dino = None,
@@ -97,12 +97,6 @@ class BETRModel2(nn.Module):
         try:
             if self.feature_mode:
                 metric_depth, mono_depth, dinov3_features = f_metric, f_mono, f_dino
-                # Add noise augmentation
-                noise = torch.randn_like(bbx2d_tight) * self.box_jitter_sigma
-                bbx2d_tight = torch.clamp(bbx2d_tight + noise, 0, 1)
-                metric_depth = metric_depth + torch.randn_like(metric_depth) * self.feature_noise_sigma
-                mono_depth = mono_depth + torch.randn_like(mono_depth) * self.feature_noise_sigma
-                dinov3_features = dinov3_features + torch.randn_like(dinov3_features) * self.feature_noise_sigma
                 
             else:
                 self.feature_monodepth.model.eval()
@@ -115,7 +109,17 @@ class BETRModel2(nn.Module):
         except RuntimeError as e:
             print("RuntimeError in feature extraction:", e)
             raise e
+        # add noise during training
+        if self.training and self.feature_noise_sigma > 0:
+            # Add noise augmentation
+            noise = torch.randn_like(bbx2d_tight) * self.box_jitter_sigma
+            bbx2d_tight = torch.clamp(bbx2d_tight + noise, 0, 1)
+            metric_depth = metric_depth + torch.randn_like(metric_depth) * self.feature_noise_sigma
+            mono_depth = mono_depth + torch.randn_like(mono_depth) * self.feature_noise_sigma
+            dinov3_features = dinov3_features + torch.randn_like(dinov3_features) * self.feature_noise_sigma
+        
         combined_features = self.feature_generator(metric_depth, mono_depth, dinov3_features)
+        combined_features = self.feature_dropout(combined_features)
 
         # Add positional encoding
         combined_features = self.conv1x1(combined_features)
@@ -133,13 +137,14 @@ class BETRModel2(nn.Module):
         output = self.transformer_decoder(image_feat, box_embeddings, image_feat_key_padding_mask=padding_mask, image_feat_pos=pos_encoding)
         # output.shape: [1024, B, 256]
         output = _unpatchify(output) # [B, 256, 32, 32]
-        rois_list = []
-        for i, box in enumerate(bbx2d_tight):
-            roi = torch.tensor([[float(i), box[0], box[1], box[2], box[3]]], device=output.device, dtype=output.dtype)
-            rois_list.append(roi)
-        rois = torch.cat(rois_list, dim=0)  # [B, 5]
+        
+        batch_size = bbx2d_tight.shape[0]
+        device = output.device
+        batch_idx = torch.arange(batch_size, device=device, dtype=output.dtype).view(-1, 1)
+        rois = torch.cat([batch_idx, bbx2d_tight], dim=1) # [B, 5] format for roi_align
+        
         pooled_feat = roi_align(input=output, boxes=rois, output_size=[5,5], spatial_scale=32.0)
-        pooled_feat = pooled_feat.view(pooled_feat.size(0), -1)  # [B, 256*7*7]
+        pooled_feat = pooled_feat.view(pooled_feat.size(0), -1)  # [B, 256*5*5]
         output = self.pred_head(pooled_feat)  # [B, num_outputs]
         return output
     

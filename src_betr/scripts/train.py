@@ -14,47 +14,20 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from models.betr_v2 import BETRModel2
-from losses.criterion_v2 import BETRv2Loss
+from models.betr import BETRModel
+from losses.criterion import BETRLoss
 from data.wds_dataloader import build_wds_feature_dataloader
-from utils import set_seed
+from utils import set_seed, reduce_dict, print_epoch_stats
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
+    os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+    mp.set_sharing_strategy('file_system')
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 def cleanup():
     dist.destroy_process_group()
-    
-def reduce_dict(input_dict, world_size, average=True):
-    if not input_dict:
-        return {}
-    with torch.no_grad():
-        names = sorted(input_dict.keys())
-        values = [input_dict[k] for k in names]
-        metrics_tensor = torch.tensor(values).cuda() # Move to GPU
-        dist.all_reduce(metrics_tensor, op=dist.ReduceOp.SUM)
-        if average:
-            metrics_tensor /= world_size
-        return {k: v.item() for k, v in zip(names, metrics_tensor)}
-
-def print_epoch_stats(epoch, num_epochs, train_metrics, val_metrics=None):
-    print("\n" + "="*85)
-    print(f" 📊 Epoch [{epoch+1:03d}/{num_epochs:03d}] Summary")
-    print("-" * 85)
-    print(f" {'Mode':<10} | {'Total':<8} | {'Center':<8} | {'Depth':<8} | {'Offset':<8} | {'D.Off':<8}")
-    print("-" * 85)
-    
-    # Train
-    t = train_metrics
-    print(f" {'Train':<10} | {t['total_loss']:.4f}   | {t['loss_center']:.4f}   | {t['loss_depth']:.4f}   | {t['loss_offset']:.4f}   | {t['loss_depth_offset']:.4f}")
-    
-    # Val
-    if val_metrics:
-        v = val_metrics
-        print(f" {'Validation':<10} | {v['total_loss']:.4f}   | {v['loss_center']:.4f}   | {v['loss_depth']:.4f}   | {v['loss_offset']:.4f}   | {v['loss_depth_offset']:.4f}")
-    print("="*85 + "\n")
     
 
 def train_worker(rank, world_size, cfg):
@@ -63,14 +36,12 @@ def train_worker(rank, world_size, cfg):
     torch.cuda.set_device(rank)
     device = torch.device(f"cuda:{rank}")
     
-    model = BETRModel2(cfg).to(device)
+    model = BETRModel(cfg).to(device)
     model = DDP(model, device_ids=[rank], find_unused_parameters=False)
     gt_size = cfg.data.dino_image_size
-    criterion = BETRv2Loss(
-        center=cfg.loss_v2_weights.center,
-        offset=cfg.loss_v2_weights.offset,
-        depth=cfg.loss_v2_weights.depth,
-        d_offset=cfg.loss_v2_weights.d_offset
+    criterion = BETRLoss(
+        lambda_fine=cfg.loss_weights.lambda_,
+        sigma=cfg.loss_weights.sigma_,
     ).to(device)
     optimizer = optim.AdamW(
         model.parameters(),
@@ -107,7 +78,11 @@ def train_worker(rank, world_size, cfg):
         iterator = train_dataloader
         if rank == 0:
             iterator = tqdm(train_dataloader, desc=f"Epoch [{epoch+1}/{num_epochs}] Training", leave=True, total=num_batches_per_epoch)
-        for batch in iterator:
+        for i, batch in enumerate(iterator):
+            if i % 500 == 0:
+                import gc
+                gc.collect()
+                torch.cuda.empty_cache()
             batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             optimizer.zero_grad()
             with torch.amp.autocast('cuda'):
@@ -158,6 +133,8 @@ def train_worker(rank, world_size, cfg):
                         val_meter[k] += v.item() * val_batch_gpu["2d_bbx"].size(0)
                         
                     val_num_samples += val_batch_gpu["2d_bbx"].size(0)
+            dist.barrier()
+            
             total_samples_tensor = torch.tensor([val_num_samples], device=device)
             dist.all_reduce(total_samples_tensor, op=dist.ReduceOp.SUM)
             total_val_samples = total_samples_tensor.item()

@@ -5,14 +5,14 @@ metricdepth_cfg_path: "src_betr/configs/da3metric-large.yaml"
 metricdepth_checkpoint_path: "src_betr/checkpoints/DA3Metric_Large.safetensors"
 dinov3_checkpoint_path: "src_betr/checkpoints/dinov3_vitl16_pretrain_lvd1689m-8aa4cbdd.pth"
 wds_root: "datasets/betr_wds"
-json_root: "datasets/L2V_ordered"
+json_root: "datasets/L2V_2d_ordered"
 data_root: "datasets/"
 
 # System
 device: "cuda"
-model_name: "betr_model_direct_v1" # Model with Z-Score and Increasing lambda of fine loss
+model_name: "betr_model_corners_v2" # Model with Z-Score and Increasing lambda of fine loss
 seed: 42
-
+  
 # Data
 data:
   da3_image_size: 448
@@ -29,6 +29,7 @@ aug:
 # Model Dimensions
 feature_generator_dim: 512  # Decreasing Fine loss from 5.0 -> 2.0, feature augmentation, offset heads initializaiton
 d_model: 256                # Transformer model dimension
+skip_channels: 256        # Channels for skip connection after feature generator
 
 # Model Hyperparameters
 dropout: 0.1
@@ -39,11 +40,11 @@ num_outputs: 27
 
 # Prediction Heads Config
 prediction_heads: [
-  "center heatmap", "center depth", "bb8 offsets", "bb8 depth offsets",
+  "corner heatmaps", "corner depths"
 ]
 soft_argmax:
   beta: 100.0
-  is_sigmoid: True
+  is_sigmoid: False
 
 # Transformer Encoder Config
 encoder:
@@ -71,8 +72,8 @@ box_embedding:
 
 # Loss configs
 loss_weights:
-  lambda_: 5.0 # Weights for fine loss
-  sigma_: 2.0 # heatmap std
+  lambda_: 2.0 # Weights for fine loss
+  sigma_: 1.2 # heatmap std
 loss_v2_weights:
   center: 1.0
   offset: 1.0
@@ -81,9 +82,9 @@ loss_v2_weights:
 # Hyperparameters
 num_epochs: 100
 batch_size: 16
-learning_rate: 1e-5
+learning_rate: 1e-4
 weight_decay: 1e-4
-num_workers: 4
+num_workers: 1
 
 # Validation and Logging
 val_interval: 1

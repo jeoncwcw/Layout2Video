@@ -10,26 +10,23 @@ class TargetGenerator:
             torch.arange(heatmap_size),
             indexing='ij'
         )
-        self.register_buffer('grid_x', x.float())
-        self.register_buffer('grid_y', y.float())
+        self.grid_y = y.float()
+        self.grid_x = x.float()
 
-    def register_buffer(self, name, tensor):
-        setattr(self, name, tensor)
-
-    def generate_heatmap(self, gt_centers, device):
+    def generate_heatmap(self, gt_corners, device):
         """       
-        :param gt_center_norm: [B, 2] Normalized coordinates of center
-        Returns: [B, 1, 128, 128] weight map
+        :param gt_corners: [B, 8, 2] Normalized coordinates of corners (0-1)
+        :param device: torch device
+        Returns: [B, 8, 128, 128] weight map
         """
-        B = gt_centers.shape[0]
+        B = gt_corners.shape[0]
         H = W = self.heatmap_size
         
-        gt_x = gt_centers[:, 0:1] * (W - 1)
-        gt_y = gt_centers[:, 1:2] * (H - 1)
-
-        dx = self.grid_x.to(device).unsqueeze(0) - gt_x.unsqueeze(-1)
-        dy = self.grid_y.to(device).unsqueeze(0) - gt_y.unsqueeze(-1)
-        dist = torch.sqrt(dx ** 2 + dy ** 2 + 1e-8)
+        gt_x = (gt_corners[:, :, 0] * (W - 1)).unsqueeze(-1) # [B, 8, 1]
+        gt_y = (gt_corners[:, :, 1] * (H - 1)).unsqueeze(-1) # [B, 8, 1]
+        grid_x = self.grid_x.to(device).view(1, 1, H, W) # [1, 1, 128, 128]
+        grid_y = self.grid_y.to(device).view(1, 1, H, W) # [1, 1, 128, 128]
         
-        weight_map = torch.exp(-dist / (2 * self.sigma ** 2))
-        return weight_map.unsqueeze(1) # [B, 1, 128, 128]
+        dist_sq = (grid_x - gt_x.unsqueeze(-1))**2 + (grid_y - gt_y.unsqueeze(-1))**2  # [B, 8, 128, 128]
+        weight_map = torch.exp(-dist_sq / (2 * self.sigma ** 2))
+        return weight_map # [B, 8, 128, 128]

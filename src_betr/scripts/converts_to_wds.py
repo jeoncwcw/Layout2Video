@@ -24,38 +24,30 @@ def process_sample(ann_data, pad_info, dino_img_size=512):
     # 3D bb8 processing
     corners_list = ann_data["projected_corners"]
     coords = [(float(c["u"]), float(c["v"])) for c in corners_list]
-    bbx3d_bb8 = torch.tensor(coords, dtype=torch.float32)
+    gt_corners = torch.tensor(coords, dtype=torch.float32)
     
-    bbx3d_bb8 = bbx3d_bb8 * scale
-    bbx3d_bb8[:, 0] += pad_left
-    bbx3d_bb8[:, 1] += pad_top
-    bbx3d_bb8 = bbx3d_bb8 / dino_img_size # Normalize to [0,1] range
-    bbx3d_center = bbx3d_bb8.mean(dim=0) # [2]
-    offsets_3d = bbx3d_bb8 - bbx3d_center.unsqueeze(0) # Normalized offsets
-    offsets_3d = offsets_3d.flatten()  # [16]
-
-    # depth (Metric to Stable Monodepth Style)
-    raw_depths = torch.clamp(torch.tensor(ann_data["depth"], dtype=torch.float32), min=1e-3) # [8]
-    center_depth = raw_depths.mean()
-    box_w, box_h = (bbx2d_processed[2] - bbx2d_processed[0]) * dino_img_size, (bbx2d_processed[3] - bbx2d_processed[1]) * dino_img_size
-    box_scale = torch.sqrt(box_w**2 + box_h**2)
-    gt_canonical_depth = torch.log(center_depth * box_scale + 1e-8) # log space canonical depth
-    depth_offsets = torch.log(raw_depths) - torch.log(center_depth) # Log space offsets (not need to normalize)
+    gt_corners = gt_corners * scale
+    gt_corners[:, 0] += pad_left
+    gt_corners[:, 1] += pad_top
+    gt_corners = gt_corners / dino_img_size # Normalize to [0,1] range
     
+    # depths processing
+    raw_depths = torch.clamp(torch.tensor(ann_data["depth"], dtype=torch.float32), min=1e-3)
+    
+    box_w = (bbx2d_processed[2] - bbx2d_processed[0]) * dino_img_size
+    box_h = (bbx2d_processed[3] - bbx2d_processed[1]) * dino_img_size
+    box_scale = torch.sqrt(box_w**2 + box_h**2 + 1e-8)
+    gt_depths = torch.log(raw_depths * box_scale + 1e-8)
         
 
     return {
         "2d_bbx": bbx2d_processed,
-        "gt_center": bbx3d_center,
-        "gt_offsets_3d": offsets_3d,
-        "gt_corners_3d": bbx3d_bb8,
-        "gt_center_depth": gt_canonical_depth,
-        "gt_depth_offsets": depth_offsets,
-        "gt_metric_depth": center_depth,
+        "gt_corners": gt_corners,
+        "gt_depths": gt_depths,
     }
     
 def main():
-    json_root = Path(PROJECT_ROOT / "datasets" / "L2V_ordered")
+    json_root = Path(PROJECT_ROOT / "datasets" / "L2V_2d_ordered")
     feature_root = Path("./datasets/betr_features")
     output_root = Path("./datasets/betr_wds")
     output_root.mkdir(parents=True, exist_ok=True)
@@ -64,7 +56,7 @@ def main():
     
     with open(image_map_path, 'r') as f:
         image_map = json.load(f)
-    split = "train"
+    split = "val"
     json_paths = sorted(json_root.glob(f"*{split}.json"))
     
     for json_path in json_paths:

@@ -55,21 +55,17 @@ def main():
 
     # 3. 통계 계산기 초기화 (image_dataloader의 타겟 형상 기준)
     stats = {
-        "center": WelfordStats((2,)),            # gt_center [B, 2]
-        "bb8_offset": WelfordStats((16,)),       # gt_offsets_3d [B, 16]
-        "center_depth": WelfordStats((1,)),        # gt_center_depth (scalar)
-        "bb8_depth_offset": WelfordStats((8,))   # gt_depth_offsets [B, 8]
+        "corners": WelfordStats((8, 2)),            # gt_corners [B, 8, 2]
+        "depths": WelfordStats((8, 1)),       # gt_depths [B, 8, 1]
     }
 
     print(f"📊 Starting statistics computation for {len(dataloader.dataset)} samples...")
 
     # 4. 데이터 순회
     for batch in tqdm(dataloader, desc="Computing Stats"):
-        stats["center"].update(batch["gt_center"])
-        stats["bb8_offset"].update(batch["gt_offsets_3d"])
-        # scalar 값은 차원을 맞춰서 전달
-        stats["center_depth"].update(batch["gt_center_depth"].unsqueeze(-1)) 
-        stats["bb8_depth_offset"].update(batch["gt_depth_offsets"])
+        stats["corners"].update(batch["gt_corners"])
+        stats["depths"].update(batch["gt_depths"])
+        # scalar 값은 차원을 맞춰서 전달\
 
     # 5. 결과 출력
     print("\n" + "="*50)

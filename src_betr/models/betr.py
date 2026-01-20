@@ -46,6 +46,7 @@ class BETRModel(nn.Module):
         self.feature_generator = FeatureGenerator(cfg.feature_generator_dim)
         in_channels = (cfg.feature_generator_dim * 2) + 1024  # Assuming DINOv3 outputs 1024 channels
         self.conv1x1 = nn.Conv2d(in_channels=in_channels, out_channels=cfg.d_model, kernel_size=1)
+        self.skip_projection = nn.Conv2d(in_channels=in_channels, out_channels=cfg.skip_channels, kernel_size=1)
 
         
         # Transformer Encoder and Decoder
@@ -81,7 +82,7 @@ class BETRModel(nn.Module):
         )
 
         # Upsample and Prediction Heads
-        self.upsample = UpsampleLayer(d_model=cfg.d_model, activation=cfg.activation)
+        self.upsample = UpsampleLayer(d_model=cfg.d_model, skip_channels=cfg.skip_channels, activation=cfg.activation)
         self.prediction_heads = DenseHeads(
             heads=cfg.prediction_heads,
             in_channels=cfg.d_model // 4,  # After two upsampling layers
@@ -90,9 +91,9 @@ class BETRModel(nn.Module):
         
         
         # # Augmentation parameters
-        # self.box_jitter_sigma = cfg.aug.box_jitter_sigma
-        # self.feature_noise_sigma = cfg.aug.feature_noise_sigma
-        # self.feature_dropout = nn.Dropout2d(p = cfg.aug.feature_dropout)
+        self.box_jitter_sigma = cfg.aug.box_jitter_sigma
+        self.feature_noise_sigma = cfg.aug.feature_noise_sigma
+        self.feature_dropout = nn.Dropout2d(p = cfg.aug.feature_dropout)
 
     def forward(self, bbx2d_tight, mask = None,
                 images_da3 = None, images_dino = None,
@@ -102,12 +103,7 @@ class BETRModel(nn.Module):
         try:
             if self.feature_mode:
                 metric_depth, mono_depth, dinov3_features = f_metric, f_mono, f_dino
-                # Add noise augmentation
-                # noise = torch.randn_like(bbx2d_tight) * self.box_jitter_sigma
-                # bbx2d_tight = torch.clamp(bbx2d_tight + noise, 0, 1)
-                # metric_depth = metric_depth + torch.randn_like(metric_depth) * self.feature_noise_sigma
-                # mono_depth = mono_depth + torch.randn_like(mono_depth) * self.feature_noise_sigma
-                # dinov3_features = dinov3_features + torch.randn_like(dinov3_features) * self.feature_noise_sigma
+                
                 
             else:
                 self.feature_monodepth.model.eval()
@@ -120,8 +116,16 @@ class BETRModel(nn.Module):
         except RuntimeError as e:
             print("RuntimeError in feature extraction:", e)
             raise e
-        combined_features = self.feature_generator(metric_depth, mono_depth, dinov3_features)
-
+        if self.training and self.feature_noise_sigma > 0:
+            noise = torch.randn_like(bbx2d_tight) * self.box_jitter_sigma
+            bbx2d_tight = torch.clamp(bbx2d_tight + noise, 0, 1)
+            metric_depth = metric_depth + torch.randn_like(metric_depth) * self.feature_noise_sigma
+            mono_depth = mono_depth + torch.randn_like(mono_depth) * self.feature_noise_sigma
+            dinov3_features = dinov3_features + torch.randn_like(dinov3_features) * self.feature_noise_sigma     
+        combined_features = self.feature_generator(metric_depth, mono_depth, dinov3_features) # [B, ]
+        skip_feature = self.skip_projection(combined_features)  # For potential skip connections
+        combined_features = self.feature_dropout(combined_features)
+        
         # Add positional encoding
         combined_features = self.conv1x1(combined_features)
         pos_encoding = self.position_encoding(combined_features)
@@ -140,12 +144,12 @@ class BETRModel(nn.Module):
         output = _unpatchify(output) # (B, C, H, W)
 
         # Upsample, Prediction Heads, Soft Argmax and get center coords
-        output = self.upsample(output)
+        output = self.upsample(output, skip_feature)
         output = self.prediction_heads(output)
-        center_heatmap = output['center heatmap'] # [B, 1, 128, 128]
-        center_coords = self.soft_argmax(center_heatmap) # [B, 1, 2]
-        center_coords_orig = center_coords*4
-        output['center coords'] = center_coords_orig
+        corner_heatmaps = output['corner heatmaps'] # [B, 8, 128, 128]
+        corner_coords = self.soft_argmax(corner_heatmaps) # [B, 8, 2]
+        corner_coords_orig = corner_coords*4
+        output['corner coords'] = corner_coords_orig
 
         return output
     

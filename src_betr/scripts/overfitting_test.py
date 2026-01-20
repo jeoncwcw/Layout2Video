@@ -13,7 +13,7 @@ from models.betr import BETRModel
 from losses.criterion_v2 import BETRv2Loss
 from losses.criterion import BETRLoss
 from data.image_dataloader import build_image_dataloader
-from utils import set_seed, visualization
+from utils import set_seed, visualization, visualize_heatmaps_feature_mode
 
 
 def run_overfitting_test():
@@ -26,13 +26,11 @@ def run_overfitting_test():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg.feature_mode = False
     cfg.device = str(device)
-    cfg.batch_size = 8
-    model = BETRModel2(cfg).to(device)
-    criterion = BETRv2Loss(
-        center=cfg.loss_v2_weights.center,
-        offset=cfg.loss_v2_weights.offset,
-        depth=cfg.loss_v2_weights.depth,
-        d_offset=cfg.loss_v2_weights.d_offset, 
+    cfg.batch_size = 4
+    model = BETRModel(cfg).to(device)
+    criterion = BETRLoss(
+        lambda_fine=cfg.loss_weights.lambda_,
+        sigma=cfg.loss_weights.sigma_,
     ).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
     
@@ -59,10 +57,6 @@ def run_overfitting_test():
             bbx2d_tight = batch_gpu["2d_bbx"],
             mask = batch_gpu["padding_mask"],
         )
-        if epoch % 100 == 0: 
-            cfg.learning_rate *= 0.5
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = cfg.learning_rate
         
         loss_dict = criterion(outputs, batch_gpu)
         total_loss = loss_dict["total_loss"]
@@ -71,10 +65,8 @@ def run_overfitting_test():
         if epoch % 10 ==0:
             elapsed = time.time() - start_time
             print(f"Epoch [{epoch:3d}/300] | Loss: {total_loss.item():.6f} | "
-                  f"Center: {loss_dict['loss_center'].item():.6f} | "
-                  f"Depth: {loss_dict['loss_depth'].item():.6f} | "
-                  f"Offset: {loss_dict['loss_offset'].item():.6f} | "
-                  f"Depth Off.: {loss_dict['loss_depth_offset'].item():.6f} | "
+                  f"Corners: {loss_dict['loss_corners'].item():.6f} | "
+                  f"Depths: {loss_dict['loss_depths'].item():.6f} | "
                   f"Time: {elapsed:.2f}s")
     print("\n" + "="*50)
     if total_loss.item() < 0.01:
@@ -83,6 +75,8 @@ def run_overfitting_test():
         print("Overfitting test failed. The model did not sufficiently reduce the loss.")
     print("="*50)
     model.eval()
+    vis_dir = PROJ_ROOT / "test" / "overfitting_vis" / "visualizations"
+    vis_dir.mkdir(parents=True, exist_ok=True)
     with torch.no_grad():
         outputs = model(
             images_dino = batch_gpu["image_dino"],
@@ -90,7 +84,18 @@ def run_overfitting_test():
             bbx2d_tight = batch_gpu["2d_bbx"],
             mask = batch_gpu["padding_mask"],
         )
+        idx = 0 
+        h_maps = outputs['corner heatmaps'][idx] # [8, 128, 128]
+        
+        p_coords_128 = outputs['corner coords'][idx] / 4.0 
+        
+        g_coords_128 = small_batch['gt_corners'][idx] * 128.0
+        
+        save_name = vis_dir / f"epoch_{epoch+1:03d}_feat_vis.png"
+        visualize_heatmaps_feature_mode(h_maps, p_coords_128, g_coords_128, save_name)
+        print(f"📸 [Rank 0] Feature-base heatmap saved: {save_name}")
     return small_batch, outputs
+
         
 
 if __name__ == "__main__":
