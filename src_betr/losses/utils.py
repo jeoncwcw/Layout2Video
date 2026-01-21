@@ -2,9 +2,8 @@ import torch
 import numpy as np
 
 class TargetGenerator:
-    def __init__(self, heatmap_size=128, sigma=2.0):
+    def __init__(self, heatmap_size=128):
         self.heatmap_size = heatmap_size
-        self.sigma = sigma
         y, x = torch.meshgrid(
             torch.arange(heatmap_size),
             torch.arange(heatmap_size),
@@ -22,11 +21,17 @@ class TargetGenerator:
         B = gt_corners.shape[0]
         H = W = self.heatmap_size
         
-        gt_x = (gt_corners[:, :, 0] * (W - 1)).unsqueeze(-1) # [B, 8, 1]
-        gt_y = (gt_corners[:, :, 1] * (H - 1)).unsqueeze(-1) # [B, 8, 1]
-        grid_x = self.grid_x.to(device).view(1, 1, H, W) # [1, 1, 128, 128]
-        grid_y = self.grid_y.to(device).view(1, 1, H, W) # [1, 1, 128, 128]
+        gt_px = gt_corners * self.heatmap_size
+        gt_x = gt_px[:, :, 0].view(B, 8, 1, 1)
+        gt_y = gt_px[:, :, 1].view(B, 8, 1, 1)
+        gt_center = gt_px.mean(dim=1, keepdim=True)  # [B, 1, 2]
         
-        dist_sq = (grid_x - gt_x.unsqueeze(-1))**2 + (grid_y - gt_y.unsqueeze(-1))**2  # [B, 8, 128, 128]
-        weight_map = torch.exp(-dist_sq / (2 * self.sigma ** 2))
+        dist_to_center = torch.norm(gt_px - gt_center, dim=2)
+        denom = (0.2 * dist_to_center).pow(2).clamp(min=1.0)
+        denom = denom.view(B, 8, 1, 1)
+        grid_x = self.grid_x.to(device).view(1, 1, H, W)
+        grid_y = self.grid_y.to(device).view(1, 1, H, W)
+        
+        dist_sq = (grid_x - gt_x).pow(2) + (grid_y - gt_y).pow(2)
+        weight_map = torch.exp(-dist_sq / (denom))
         return weight_map # [B, 8, 128, 128]

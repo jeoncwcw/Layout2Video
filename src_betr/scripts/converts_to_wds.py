@@ -33,11 +33,7 @@ def process_sample(ann_data, pad_info, dino_img_size=512):
     
     # depths processing
     raw_depths = torch.clamp(torch.tensor(ann_data["depth"], dtype=torch.float32), min=1e-3)
-    
-    box_w = (bbx2d_processed[2] - bbx2d_processed[0]) * dino_img_size
-    box_h = (bbx2d_processed[3] - bbx2d_processed[1]) * dino_img_size
-    box_scale = torch.sqrt(box_w**2 + box_h**2 + 1e-8)
-    gt_depths = torch.log(raw_depths * box_scale + 1e-8)
+    gt_depths = torch.log(raw_depths + 1e-8)
         
 
     return {
@@ -56,7 +52,7 @@ def main():
     
     with open(image_map_path, 'r') as f:
         image_map = json.load(f)
-    split = "val"
+    split = "train"
     json_paths = sorted(json_root.glob(f"*{split}.json"))
     
     for json_path in json_paths:

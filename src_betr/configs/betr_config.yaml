@@ -35,8 +35,6 @@ skip_channels: 256        # Channels for skip connection after feature generator
 dropout: 0.1
 activation: "relu"
 feature_mode: True  # Whether to use feature generator a.k.a. training mode
-num_outputs: 27
-# Number of outputs for prediction head (center coords: 2, center depth: 1, bb8 offsets: 16, bb8 depth offsets: 8)
 
 # Prediction Heads Config
 prediction_heads: [
@@ -54,7 +52,6 @@ encoder:
 
 # Transformer Decoder Config
 decoder:
-  d_model: 256
   nhead: 8
   dim_feedforward: 1024
   num_layers: 6
@@ -73,7 +70,7 @@ box_embedding:
 # Loss configs
 loss_weights:
   lambda_: 2.0 # Weights for fine loss
-  sigma_: 1.2 # heatmap std
+  depth: 0.1 # heatmap std
 loss_v2_weights:
   center: 1.0
   offset: 1.0

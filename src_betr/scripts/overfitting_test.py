@@ -13,7 +13,7 @@ from models.betr import BETRModel
 from losses.criterion_v2 import BETRv2Loss
 from losses.criterion import BETRLoss
 from data.image_dataloader import build_image_dataloader
-from utils import set_seed, visualization, visualize_heatmaps_feature_mode
+from utils import set_seed, visualization, visualize_heatmaps
 
 
 def run_overfitting_test():
@@ -30,7 +30,7 @@ def run_overfitting_test():
     model = BETRModel(cfg).to(device)
     criterion = BETRLoss(
         lambda_fine=cfg.loss_weights.lambda_,
-        sigma=cfg.loss_weights.sigma_,
+        loss_depth=cfg.loss_weights.depth,
     ).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
     
@@ -49,7 +49,7 @@ def run_overfitting_test():
     model.train()
     start_time = time.time()
     
-    for epoch in range(1, 301):
+    for epoch in range(1, 1001):
         optimizer.zero_grad()
         outputs = model(
             images_dino = batch_gpu["image_dino"],
@@ -64,7 +64,7 @@ def run_overfitting_test():
         optimizer.step()
         if epoch % 10 ==0:
             elapsed = time.time() - start_time
-            print(f"Epoch [{epoch:3d}/300] | Loss: {total_loss.item():.6f} | "
+            print(f"Epoch [{epoch:3d}/1000] | Loss: {total_loss.item():.6f} | "
                   f"Corners: {loss_dict['loss_corners'].item():.6f} | "
                   f"Depths: {loss_dict['loss_depths'].item():.6f} | "
                   f"Time: {elapsed:.2f}s")
@@ -92,7 +92,7 @@ def run_overfitting_test():
         g_coords_128 = small_batch['gt_corners'][idx] * 128.0
         
         save_name = vis_dir / f"epoch_{epoch+1:03d}_feat_vis.png"
-        visualize_heatmaps_feature_mode(h_maps, p_coords_128, g_coords_128, save_name)
+        visualize_heatmaps(h_maps, p_coords_128, g_coords_128, save_name)
         print(f"📸 [Rank 0] Feature-base heatmap saved: {save_name}")
     return small_batch, outputs
 

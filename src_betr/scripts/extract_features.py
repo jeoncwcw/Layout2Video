@@ -18,7 +18,7 @@ from data.utils import filtered_annotations
 def get_filtered_unique_images(root_json_dir, target_quality="Good", min_area=32*32, dino_size=512):
     unique_paths = set()
     
-    json_paths = list(Path(root_json_dir).glob("*val.json"))
+    json_paths = list(Path(root_json_dir).glob("*train.json"))
     for path in json_paths:
         filtered_data = filtered_annotations(path, target_quality, min_area, dino_size)
         valid_image_ids = [ann["image_id"] for ann in filtered_data["annotations"]]

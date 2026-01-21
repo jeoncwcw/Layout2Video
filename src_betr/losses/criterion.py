@@ -7,13 +7,15 @@ from .utils import TargetGenerator
 # STD = {"center": 0.159, "bb8_offset": 0.084, "center_depth": 0.968, "bb8_depth_offset": 0.120}
 
 class BETRLoss(nn.Module):
-    def __init__(self, lambda_fine=2.0, sigma=2.0, heatmap_size=128, input_size=512, threshold=.1):
+    def __init__(self, lambda_fine=2.0, loss_depth = 0.1, heatmap_size=128, input_size=512, threshold=0.01, peak_weight=200.0):
         super(BETRLoss, self).__init__()
         self.heatmap_size, self.input_size = int(heatmap_size), int(input_size)
         self.lambda_fine = lambda_fine
-        self.target_gen = TargetGenerator(heatmap_size=heatmap_size, sigma=sigma) 
+        self.loss_depth = loss_depth
+        self.target_gen = TargetGenerator(heatmap_size=heatmap_size) 
         self.smooth_l1 = nn.SmoothL1Loss(reduction="none")
         self.threshold = threshold
+        self.peak_weight = peak_weight
         
     def forward(self, preds, batch):
         """
@@ -32,12 +34,16 @@ class BETRLoss(nn.Module):
         weight_map = self.target_gen.generate_heatmap(gt_corners, device) # [B, 8, 128, 128]
         weight_map = weight_map * valid_mask  # Mask out padding areas
 
-        pred_confidence_map = torch.sigmoid(preds['corner heatmaps'])  # [B, 8, 128, 128]
+       
+        pred_confidence_map = preds['corner heatmaps']  # [B, 8, 128, 128]
         pred_confidence_map = pred_confidence_map * valid_mask  # Mask out padding areas
         # -- [Corner Loss] --
         # L_coarse
+         # TODO: change code pos_weight to be tuned by cfg file
+        B, C, _, _ = preds['corner heatmaps'].shape
+        pos_weight = torch.where(weight_map > self.threshold, self.peak_weight, 1.0)
         coarse_diff = self.smooth_l1(preds['corner heatmaps'], weight_map)
-        loss_coarse = (coarse_diff * valid_mask).sum() / (valid_mask.sum() + 1e-8)
+        loss_coarse = (coarse_diff * pos_weight * valid_mask).sum() / (B * C + 1e-8)
         # L_fine
         pred_corner_norm = preds['corner coords'] / float(self.input_size)
         loss_fine = F.smooth_l1_loss(pred_corner_norm, batch['gt_corners'], reduction='mean')
@@ -48,7 +54,7 @@ class BETRLoss(nn.Module):
         gt_corner_depths_map = batch['gt_depths'].view(-1, 8, 1, 1).expand(-1, 8, self.heatmap_size, self.heatmap_size)  # [B, 8, 128, 128]
         loss_depths = self._weighted_loss(preds['corner depths'], gt_corner_depths_map, pred_confidence_map)
 
-        total_loss = loss_corners + loss_depths
+        total_loss = loss_corners + self.loss_depth * loss_depths
         return {
             "total_loss": total_loss,
             "loss_corners": loss_corners,

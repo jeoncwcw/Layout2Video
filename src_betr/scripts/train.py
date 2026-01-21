@@ -11,20 +11,25 @@ from tqdm import tqdm
 from collections import defaultdict
 import sys
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+SRC_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = SRC_ROOT.parent
+sys.path.insert(0, str(SRC_ROOT))
 
 from models.betr import BETRModel
 from losses.criterion import BETRLoss
 from data.wds_dataloader import build_wds_feature_dataloader
-from utils import set_seed, reduce_dict, print_epoch_stats
+from utils import set_seed, reduce_dict, print_epoch_stats, visualize_heatmaps
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
     os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
     mp.set_sharing_strategy('file_system')
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
+    try:
+        dist.init_process_group("nccl", rank=rank, world_size=world_size, device_id=rank)
+    except:
+        dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
 def cleanup():
     dist.destroy_process_group()
@@ -33,7 +38,6 @@ def cleanup():
 def train_worker(rank, world_size, cfg):
     setup(rank, world_size)
     set_seed(cfg.get("seed", 42), rank)
-    torch.cuda.set_device(rank)
     device = torch.device(f"cuda:{rank}")
     
     model = BETRModel(cfg).to(device)
@@ -41,7 +45,6 @@ def train_worker(rank, world_size, cfg):
     gt_size = cfg.data.dino_image_size
     criterion = BETRLoss(
         lambda_fine=cfg.loss_weights.lambda_,
-        sigma=cfg.loss_weights.sigma_,
     ).to(device)
     optimizer = optim.AdamW(
         model.parameters(),
@@ -60,7 +63,8 @@ def train_worker(rank, world_size, cfg):
     val_dataloader = build_wds_feature_dataloader(**total_data_kwargs, split="val", epoch_length=cfg.epoch_length//10)
     
     num_epochs = cfg.num_epochs
-    checkpoint_dir = PROJECT_ROOT / "checkpoints" / cfg.model_name
+    checkpoint_dir = SRC_ROOT / "checkpoints" / cfg.model_name
+    vis_dir = PROJECT_ROOT / "test" / cfg.model_name / "heatmap_vis"
     best_val_loss = float('inf')
     if rank == 0:   
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -119,7 +123,7 @@ def train_worker(rank, world_size, cfg):
                 print(f"Starting validation for Epoch {epoch+1}...")
             
             with torch.inference_mode():
-                for val_batch in val_dataloader:
+                for i, val_batch in enumerate(val_dataloader):
                     val_batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in val_batch.items()}
                     val_outputs = model(
                         bbx2d_tight=val_batch_gpu["2d_bbx"],
@@ -130,10 +134,20 @@ def train_worker(rank, world_size, cfg):
                     )
                     val_loss_dict = criterion(val_outputs, val_batch_gpu)
                     for k, v in val_loss_dict.items():
-                        val_meter[k] += v.item() * val_batch_gpu["2d_bbx"].size(0)
-                        
+                        val_meter[k] += v.item() * val_batch_gpu["2d_bbx"].size(0)    
                     val_num_samples += val_batch_gpu["2d_bbx"].size(0)
-            dist.barrier()
+                    if rank ==0 and i == 0:
+                        h_maps = val_outputs['corner heatmaps'][0]  # [8, 128, 128]
+                        p_coords_128 = val_outputs['corner coords'][0] / 4.0
+                        g_coords_128 = val_batch['gt_corners'][0] * 128.0
+                        save_name = vis_dir / f"epoch_{epoch+1:03d}.png"
+                        vis_dir.mkdir(parents=True, exist_ok=True)
+                        visualize_heatmaps(h_maps, p_coords_128, g_coords_128, save_name)
+                        print(f"Saved heatmap visualization to {save_name}")
+            try:
+                dist.barrier(device_ids=[rank])
+            except:
+                dist.barrier()
             
             total_samples_tensor = torch.tensor([val_num_samples], device=device)
             dist.all_reduce(total_samples_tensor, op=dist.ReduceOp.SUM)
@@ -153,21 +167,21 @@ def train_worker(rank, world_size, cfg):
                 current_val_loss = global_val_metrics["total_loss"]
                 if current_val_loss < best_val_loss:
                     best_val_loss = current_val_loss
-                    checkpoint_path = checkpoint_dir / f"{cfg.model_name}_best.pth"
+                    checkpoint_path = checkpoint_dir / f"best.pth"
                     torch.save(model.module.state_dict(), checkpoint_path)
                     print(f"Saved best model with val loss {best_val_loss:.4f} at {checkpoint_path}")
             if (epoch + 1) % cfg.get("save_interval", 5) == 0:
-                checkpoint_path = checkpoint_dir / f"{cfg.model_name}_epoch{epoch+1:03d}.pth"
+                checkpoint_path = checkpoint_dir / f"epoch{epoch+1:03d}.pth"
                 torch.save(model.module.state_dict(), checkpoint_path)
                 print(f"Saved checkpoint at {checkpoint_path}")  
     cleanup()
     
 def main():
-    cfg_path = PROJECT_ROOT / "configs" / "betr_config.yaml"
+    cfg_path = SRC_ROOT / "configs" / "betr_config.yaml"
     cfg = OmegaConf.load(cfg_path)
     cfg.feature_mode = True
     world_size = torch.cuda.device_count()
-    if (PROJECT_ROOT / "checkpoints" / cfg.model_name).exists():
+    if (SRC_ROOT / "checkpoints" / cfg.model_name).exists():
         print("Model already trained. Exiting.")
         return
     mp.spawn(train_worker, args=(world_size, cfg), nprocs=world_size, join=True)

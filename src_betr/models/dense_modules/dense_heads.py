@@ -9,19 +9,26 @@ class DenseHeads(nn.Module):
         for role in heads:
             if role in ['corner heatmaps']:
                 out_ch = 8  # 8 corners
+                layers = [
+                    nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
+                    nn.ReLU(),
+                    nn.Conv2d(in_channels, out_ch, kernel_size=1),
+                    nn.Sigmoid()
+                ]
             elif role in ['corner depths']:
                 out_ch = 8  # Depth for each corner
+                layers = [
+                    nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
+                    nn.ReLU(),
+                    nn.Conv2d(in_channels, out_ch, kernel_size=1),
+                ]
             else:
                 raise ValueError(f"Unknown head role: {role}")
             
-            fc = nn.Sequential(
-                nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
-                nn.ReLU(),
-                nn.Conv2d(in_channels, out_ch, kernel_size=1)
-            )
+            fc = nn.Sequential(*layers)
             
             if "heatmap" in role:
-                fc[-1].bias.data.fill_(-2.19)  # Initialize heatmap head bias
+                fc[-2].bias.data.fill_(-2.19)  # Initialize heatmap head bias
             else:
                 self._init_weights(fc)
                 
