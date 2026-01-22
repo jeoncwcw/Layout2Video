@@ -20,7 +20,7 @@ class BETRModel(nn.Module):
         # Feature Extractors
         self.feature_mode = cfg.feature_mode
         if not self.feature_mode:
-            print("🚀 Loading Heavy Backbones (Image Training Mode)...")
+            print("[Image Mode] Loading Backbones ...")
             self.feature_monodepth = DA3FeatureExtractor(
                 cfg_path=Path(cfg.monodepth_cfg_path),
                 checkpoint_path=Path(cfg.monodepth_checkpoint_path),
@@ -37,7 +37,7 @@ class BETRModel(nn.Module):
             )
             self.feature_dropout = nn.Dropout2d(p = cfg.aug.feature_dropout)
         else:
-            print("⚡ Feature Mode On: Skipping Backbone Loading (Memory Saved!)")
+            print("[Feature Mode] Skipping Backbone Loading ...")
             self.feature_monodepth = None
             self.feature_metricdepth = None
             self.feature_dinov3 = None
@@ -103,8 +103,6 @@ class BETRModel(nn.Module):
         try:
             if self.feature_mode:
                 metric_depth, mono_depth, dinov3_features = f_metric, f_mono, f_dino
-                
-                
             else:
                 self.feature_monodepth.model.eval()
                 self.feature_metricdepth.model.eval()
@@ -116,12 +114,12 @@ class BETRModel(nn.Module):
         except RuntimeError as e:
             print("RuntimeError in feature extraction:", e)
             raise e
-        if self.training and self.feature_noise_sigma > 0:
-            noise = torch.randn_like(bbx2d_tight) * self.box_jitter_sigma
-            bbx2d_tight = torch.clamp(bbx2d_tight + noise, 0, 1)
-            metric_depth = metric_depth + torch.randn_like(metric_depth) * self.feature_noise_sigma
-            mono_depth = mono_depth + torch.randn_like(mono_depth) * self.feature_noise_sigma
-            dinov3_features = dinov3_features + torch.randn_like(dinov3_features) * self.feature_noise_sigma     
+        # if self.training and self.feature_noise_sigma > 0:
+        #     noise = torch.randn_like(bbx2d_tight) * self.box_jitter_sigma
+        #     bbx2d_tight = torch.clamp(bbx2d_tight + noise, 0, 1)
+        #     metric_depth = metric_depth + torch.randn_like(metric_depth) * self.feature_noise_sigma
+        #     mono_depth = mono_depth + torch.randn_like(mono_depth) * self.feature_noise_sigma
+        #     dinov3_features = dinov3_features + torch.randn_like(dinov3_features) * self.feature_noise_sigma     
         combined_features = self.feature_generator(metric_depth, mono_depth, dinov3_features) # [B, ]
         skip_feature = self.skip_projection(combined_features)  # For potential skip connections
         combined_features = self.feature_dropout(combined_features)

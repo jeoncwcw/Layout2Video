@@ -2,6 +2,7 @@ import torch
 import torch.distributed as dist
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 def reduce_dict(input_dict, world_size, average=True):
     if not input_dict:
@@ -14,6 +15,19 @@ def reduce_dict(input_dict, world_size, average=True):
         if average:
             metrics_tensor /= world_size
         return {k: v.item() for k, v in zip(names, metrics_tensor)}
+
+def get_scheduler(optimizer, cfg, num_batches_per_epoch):
+    warmup_epochs = cfg["warmup_epochs"]
+    num_epochs = cfg["num_epochs"]
+    def lr_lambda(current_step):
+        current_epoch = current_step / num_batches_per_epoch
+        # Linear warmup
+        if current_epoch < warmup_epochs:
+            return float(current_epoch) / float(max(1, warmup_epochs))
+        # Cosine annealing
+        progress = float(current_epoch - warmup_epochs) / float(max(1, num_epochs - warmup_epochs))
+        return 0.5 * (1.0 + math.cos(math.pi * progress))
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 def print_epoch_stats(epoch, num_epochs, train_metrics, val_metrics=None):
     print("\n" + "="*85)

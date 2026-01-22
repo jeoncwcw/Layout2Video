@@ -18,7 +18,7 @@ sys.path.insert(0, str(SRC_ROOT))
 from models.betr import BETRModel
 from losses.criterion import BETRLoss
 from data.wds_dataloader import build_wds_feature_dataloader
-from utils import set_seed, reduce_dict, print_epoch_stats, visualize_heatmaps
+from utils import set_seed, reduce_dict, print_epoch_stats, visualize_heatmaps, get_scheduler
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -30,19 +30,32 @@ def setup(rank, world_size):
         dist.init_process_group("nccl", rank=rank, world_size=world_size, device_id=rank)
     except:
         dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    torch.backends.fp32_precision = "ieee"
+    torch.backends.cuda.matmul.fp32_precision = "ieee"
+    torch.backends.cudnn.fp32_precision = "ieee"
+    torch.backends.cudnn.conv.fp32_precision = "tf32"
+    torch.backends.cudnn.rnn.fp32_precision = "tf32"
 
 def cleanup():
     dist.destroy_process_group()
     
 
 def train_worker(rank, world_size, cfg):
+    # Base settings
     setup(rank, world_size)
     set_seed(cfg.get("seed", 42), rank)
     device = torch.device(f"cuda:{rank}")
     
     model = BETRModel(cfg).to(device)
-    model = DDP(model, device_ids=[rank], find_unused_parameters=False)
+    model = torch.compile(model)
+    model = DDP(model, device_ids=[rank], find_unused_parameters=False, gradient_as_bucket_view=True)
     gt_size = cfg.data.dino_image_size
+    checkpoint_dir = SRC_ROOT / "checkpoints" / cfg.model_name
+    vis_dir = PROJECT_ROOT / "test" / cfg.model_name / "heatmap_vis"
+    num_epochs = cfg.num_epochs
+    num_batches_per_epoch = cfg.epoch_length // (cfg.batch_size * world_size)
+    
+    # Learning components
     criterion = BETRLoss(
         lambda_fine=cfg.loss_weights.lambda_,
     ).to(device)
@@ -51,20 +64,19 @@ def train_worker(rank, world_size, cfg):
         lr=cfg.learning_rate,
         weight_decay=cfg.weight_decay
     )
+    scheduler = get_scheduler(optimizer, cfg, num_batches_per_epoch)
     
     total_data_kwargs = {
+        "cfg": cfg,
         "wds_root": Path(cfg.wds_root),
         "batch_size": cfg.batch_size,
         "dino_img_size": gt_size,
         "num_workers": cfg.num_workers,
         "world_size": world_size
     }
-    train_dataloader = build_wds_feature_dataloader(**total_data_kwargs, split="train", epoch_length=cfg.epoch_length)
-    val_dataloader = build_wds_feature_dataloader(**total_data_kwargs, split="val", epoch_length=cfg.epoch_length//10)
+    train_dataloader, aug_obj = build_wds_feature_dataloader(**total_data_kwargs, split="train", epoch_length=cfg.epoch_length)
+    val_dataloader, _ = build_wds_feature_dataloader(**total_data_kwargs, split="val", epoch_length=cfg.epoch_length//10)
     
-    num_epochs = cfg.num_epochs
-    checkpoint_dir = SRC_ROOT / "checkpoints" / cfg.model_name
-    vis_dir = PROJECT_ROOT / "test" / cfg.model_name / "heatmap_vis"
     best_val_loss = float('inf')
     if rank == 0:   
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -72,9 +84,10 @@ def train_worker(rank, world_size, cfg):
         print(f"Starting training for {num_epochs} epochs...")
         print("=" * 50)
     scaler = torch.amp.GradScaler('cuda')
-    num_batches_per_epoch = cfg.epoch_length // (cfg.batch_size * world_size)
     
     for epoch in range(num_epochs):
+        if aug_obj is not None:
+            aug_obj.set_epoch(epoch)
         # Training phase
         model.train()
         train_meter = defaultdict(float)
@@ -83,12 +96,11 @@ def train_worker(rank, world_size, cfg):
         if rank == 0:
             iterator = tqdm(train_dataloader, desc=f"Epoch [{epoch+1}/{num_epochs}] Training", leave=True, total=num_batches_per_epoch)
         for i, batch in enumerate(iterator):
-            if i % 500 == 0:
-                import gc
-                gc.collect()
-                torch.cuda.empty_cache()
-            batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-            optimizer.zero_grad()
+            # if i % 500 == 0:
+            #     import gc
+            #     gc.collect()
+            #     torch.cuda.empty_cache()
+            batch_gpu = {k: v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             with torch.amp.autocast('cuda'):
                 outputs = model(
                     bbx2d_tight=batch_gpu["2d_bbx"],
@@ -98,10 +110,13 @@ def train_worker(rank, world_size, cfg):
                     f_dino=batch_gpu["feat_dino"],
                 )
                 loss_dict = criterion(outputs, batch_gpu)
-                total_loss = loss_dict["total_loss"]
+                total_loss = loss_dict["total_loss"] / cfg["grad_accum_steps"]
             scaler.scale(total_loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            if (i + 1) % cfg["grad_accum_steps"] == 0:
+                scaler.step(optimizer)
+                scaler.update()
+                scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
             with torch.no_grad():
                 for k, v in loss_dict.items():
                     train_meter[k] += v.item() * batch_gpu["2d_bbx"].size(0)
@@ -124,7 +139,7 @@ def train_worker(rank, world_size, cfg):
             
             with torch.inference_mode():
                 for i, val_batch in enumerate(val_dataloader):
-                    val_batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in val_batch.items()}
+                    val_batch_gpu = {k: v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v for k, v in val_batch.items()}
                     val_outputs = model(
                         bbx2d_tight=val_batch_gpu["2d_bbx"],
                         mask=val_batch_gpu["padding_mask"],

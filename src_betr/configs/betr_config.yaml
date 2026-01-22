@@ -10,7 +10,7 @@ data_root: "datasets/"
 
 # System
 device: "cuda"
-model_name: "betr_model_corners_v2" # Model with Z-Score and Increasing lambda of fine loss
+model_name: "betr_model_corners_v3" # Model with Z-Score and Increasing lambda of fine loss
 seed: 42
   
 # Data
@@ -25,10 +25,12 @@ aug:
   box_jitter_sigma: 5e-3
   feature_noise_sigma: 1e-2
   feature_dropout: 0.1
+  flip_prob: 0.3
+  rot_range: 15.0
 
 # Model Dimensions
 feature_generator_dim: 512  # Decreasing Fine loss from 5.0 -> 2.0, feature augmentation, offset heads initializaiton
-d_model: 256                # Transformer model dimension
+d_model: 512                # Transformer model dimension
 skip_channels: 256        # Channels for skip connection after feature generator
 
 # Model Hyperparameters
@@ -70,18 +72,21 @@ box_embedding:
 # Loss configs
 loss_weights:
   lambda_: 2.0 # Weights for fine loss
-  depth: 0.1 # heatmap std
+  depth: 1.0 # heatmap std
 loss_v2_weights:
   center: 1.0
   offset: 1.0
   depth: 1.0
   d_offset: 1.0
 # Hyperparameters
+# maintain grad_accum_steps * batch_size * world_size = 48
 num_epochs: 100
-batch_size: 16
+warmup_epochs: 5
+grad_accum_steps: 2
+batch_size: 8
 learning_rate: 1e-4
 weight_decay: 1e-4
-num_workers: 1
+num_workers: 2
 
 # Validation and Logging
 val_interval: 1

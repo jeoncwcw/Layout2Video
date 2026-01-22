@@ -8,7 +8,6 @@ import sys
 BETR_ROOT = Path(__file__).resolve().parents[0]
 PROJ_ROOT = BETR_ROOT.parent
 sys.path.insert(0, str(BETR_ROOT))
-from models.betr_v2 import BETRModel2
 from models.betr import BETRModel
 from data.image_dataloader import build_image_dataloader
 from utils import set_seed

@@ -2,7 +2,8 @@ import torch
 import webdataset as wds
 import math
 from pathlib import Path
-from torch.utils.data import DataLoader
+import torchvision.transforms.functional as TF
+from omegaconf import OmegaConf
 
 DATASET_STATS = {
     "ARKitScenes": {"count": 0,      "type": "indoor"},
@@ -13,7 +14,70 @@ DATASET_STATS = {
     "SUNRGBD":     {"count": 13006,  "type": "indoor"},
 }
 
-
+class FeatureGeometryAug:
+    def __init__(self, cfg):
+        self.flip_prob = cfg.aug.flip_prob
+        self.rot_range = cfg.aug.rot_range
+        self.swap_map = [3, 2, 1, 0, 7, 6, 5, 4]
+        self.cfg_noise = cfg.aug.feature_noise_sigma
+        self.cfg_jitter = cfg.aug.box_jitter_sigma
+        
+        self.current_noise = 0.0
+        self.current_jitter = 0.0
+    
+    def set_epoch(self, epoch):
+        if epoch < 5:
+            self.current_noise = 0.0
+            self.current_jitter = 0.0
+        else:
+            self.current_noise = self.cfg_noise
+            self.current_jitter = self.cfg_jitter
+        
+    def __call__(self, samples):
+        for sample in samples:
+            if self.rot_range > 0:
+                angle = (torch.rand(1).item() * 2 - 1) * self.rot_range
+                rad = math.radians(angle)
+                cos_a, sin_a = math.cos(rad), math.sin(rad)
+                
+                # Feature rotation
+                for key in ["feat_metric", "feat_mono", "feat_dino"]:
+                    sample[key] = TF.rotate(sample[key], angle, interpolation=TF.InterpolationMode.BILINEAR, expand=False)
+                # Corner rotation
+                curr_corners = sample["gt_corners"] - 0.5
+                new_corners = torch.empty_like(curr_corners)
+                new_corners[:, 0] = curr_corners[:, 0] * cos_a - curr_corners[:, 1] * sin_a
+                new_corners[:, 1] = curr_corners[:, 0] * sin_a + curr_corners[:, 1] * cos_a
+                sample["gt_corners"] = (new_corners + 0.5).clamp(0, 1)
+                
+                # Box rotation
+                x1, y1, x2, y2 = sample["2d_bbx"]
+                bx = torch.tensor([x1, x2, x2, x1]) - 0.5
+                by = torch.tensor([y1, y1, y2, y2]) - 0.5
+                new_bx = bx * cos_a - by * sin_a + 0.5
+                new_by = bx * sin_a + by * cos_a + 0.5
+                sample["2d_bbx"] = torch.tensor([new_bx.min(), new_by.min(), new_bx.max(), new_by.max()]).clamp(0, 1)
+                # padding rotation
+                mask_float = sample["padding_mask"].float().unsqueeze(0) # [1, H, W]
+                rotated_mask = TF.rotate(mask_float, angle, interpolation=TF.InterpolationMode.NEAREST, expand=False, fill=1.0)
+                sample["padding_mask"] = rotated_mask.squeeze(0) > 0.5
+                
+            if torch.rand(1) < self.flip_prob:
+                for key in ["feat_metric", "feat_mono", "feat_dino", "padding_mask"]:
+                    sample[key] = TF.hflip(sample[key])
+                
+                sample["gt_corners"][:, 0] = 1.0 - sample["gt_corners"][:, 0].clamp(0, 1)
+                sample["gt_corners"] = sample["gt_corners"][self.swap_map]
+                x1, y1, x2, y2 = sample["2d_bbx"]
+                sample["2d_bbx"] = torch.tensor([1.0 - x2, y1, 1.0 - x1, y2])
+            if self.current_noise > 0:
+                for key in ["feat_metric", "feat_mono", "feat_dino"]:
+                    sample[key] += torch.randn_like(sample[key]) * self.current_noise
+            if self.current_jitter > 0:
+                noise = torch.randn_like(sample["2d_bbx"]) * self.current_jitter
+                sample["2d_bbx"] = torch.clamp(sample["2d_bbx"] + noise, 0, 1)
+            yield sample
+        
 class FlattenSamples:
     def __init__(self, dino_img_size: int = 512):
         self.dino_img_size = dino_img_size
@@ -68,6 +132,7 @@ def get_hierarchical_weights(found_datasets):
 
     
 def build_wds_feature_dataloader(
+    cfg: any,
     wds_root: Path,
     split: str = "train",
     batch_size: int = 16,
@@ -99,21 +164,26 @@ def build_wds_feature_dataloader(
             url = str(d_dir / f"shard-{{000000..{last_shard_idx:06d}}}.tar")
         urls.append(url)
         w = weight_map[d_name]
-
         weights.append(w)
         
     sum_w = sum(weights)
     weights = [w / sum_w for w in weights]
     
-    flatten_transform = FlattenSamples(dino_img_size=dino_img_size)
+    transform = FlattenSamples(dino_img_size=dino_img_size)
+    aug_transform = None
+    if split == "train":
+        aug_transform = FeatureGeometryAug(cfg)
+        
     datasets = []
     for url in urls:
         ds = (wds.WebDataset(url, nodesplitter=wds.split_by_node, shardshuffle=1000, empty_check=False)
-        .shuffle(2000)
+        .shuffle(1000)
         .decode("torch")
-        .compose(flatten_transform)
-        .shuffle(10000)
+        .compose(transform)
+        .shuffle(500)
         )
+        if aug_transform is not None:
+            ds = ds.compose(aug_transform)
         datasets.append(ds)
     
     if len(datasets) > 1:
@@ -128,11 +198,10 @@ def build_wds_feature_dataloader(
         .batched(batch_size, partial=False)
         .with_epoch(batches_per_rank)
     )
-
-    return loader
+    return loader, aug_transform
 
 def count_wds_samples(wds_root: Path, split: str = "train") -> dict:
-    """WDS 샤드에서 실제 샘플 수를 계산"""
+    # Calculate number of samples and annotations in WDS dataset
     import tarfile
     
     wds_root = Path(wds_root)
@@ -150,14 +219,14 @@ def count_wds_samples(wds_root: Path, split: str = "train") -> dict:
         
         for shard_path in shards:
             with tarfile.open(shard_path, 'r') as tar:
-                # 각 샘플은 __key__로 구분됨
+                # Each sample is distinguished by __key__
                 keys = set()
                 for member in tar.getmembers():
                     key = member.name.rsplit('.', 1)[0]
                     keys.add(key)
                 sample_count += len(keys)
                 
-                # targets.pth 파일에서 annotation 수 계산
+                # Calculate number of annotations from targets.pth files
                 for member in tar.getmembers():
                     if member.name.endswith('targets.pth'):
                         f = tar.extractfile(member)
@@ -174,18 +243,13 @@ def count_wds_samples(wds_root: Path, split: str = "train") -> dict:
     return counts
 
 if __name__ == "__main__":
-    # 1) 가중치 계산 테스트
-    print("=" * 50)
-    print("📊 Testing get_hierarchical_weights()")
-    print("=" * 50)
     
-    # 2) 실제 데이터로더 테스트 (경로 수정 필요)
     print("\n" + "=" * 50)
     print("📊 Testing build_wds_feature_dataloader()")
     print("=" * 50)
     
     wds_root = Path("/home/vmg/Desktop/layout2video/datasets/betr_wds")
-    
+    cfg = OmegaConf.load("/home/vmg/Desktop/layout2video/src_betr/configs/betr_config.yaml")
     if not wds_root.exists():
         print(f"⚠️  WDS root not found: {wds_root}")
     else:
@@ -195,10 +259,11 @@ if __name__ == "__main__":
             print(f"  {name}: {info}")
         try:
             loader = build_wds_feature_dataloader(
+                cfg = cfg,
                 wds_root=wds_root,
                 split="train",
                 batch_size=4,
-                num_workers=0,
+                num_workers=2,
                 epoch_length=10,
             )
             
