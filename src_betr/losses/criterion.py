@@ -43,7 +43,7 @@ class BETRLoss(nn.Module):
         B, C, _, _ = preds['corner heatmaps'].shape
         pos_weight = torch.where(weight_map > self.threshold, self.peak_weight, 1.0)
         coarse_diff = self.smooth_l1(preds['corner heatmaps'], weight_map)
-        loss_coarse = (coarse_diff * pos_weight * valid_mask).sum() / (B * C + 1e-8)
+        loss_coarse = (coarse_diff * pos_weight * valid_mask).sum() / (weight_map.sum() + 1e-8)
         # L_fine
         pred_corner_norm = preds['corner coords'] / float(self.input_size)
         loss_fine = F.smooth_l1_loss(pred_corner_norm, batch['gt_corners'], reduction='mean')

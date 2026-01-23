@@ -49,7 +49,7 @@ def run_overfitting_test():
     model.train()
     start_time = time.time()
     
-    for epoch in range(1, 1001):
+    for epoch in range(1, 301):
         optimizer.zero_grad()
         outputs = model(
             images_dino = batch_gpu["image_dino"],
@@ -63,8 +63,9 @@ def run_overfitting_test():
         total_loss.backward()
         optimizer.step()
         if epoch % 10 ==0:
-            elapsed = time.time() - start_time
-            print(f"Epoch [{epoch:3d}/1000] | Loss: {total_loss.item():.6f} | "
+            with torch.no_grad():
+                elapsed = time.time() - start_time
+                print(f"Epoch [{epoch:3d}/300] | Loss: {total_loss.item():.6f} | "
                   f"Corners: {loss_dict['loss_corners'].item():.6f} | "
                   f"Depths: {loss_dict['loss_depths'].item():.6f} | "
                   f"Time: {elapsed:.2f}s")

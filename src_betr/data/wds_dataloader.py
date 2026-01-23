@@ -4,14 +4,23 @@ import math
 from pathlib import Path
 import torchvision.transforms.functional as TF
 from omegaconf import OmegaConf
+import random
 
-DATASET_STATS = {
+DATASET_STATS_ANN_TRAIN = {
     "ARKitScenes": {"count": 0,      "type": "indoor"},
     "Hypersim":    {"count": 264154, "type": "indoor"},
     "KITTI":       {"count": 4435,   "type": "outdoor"},
     "nuScenes":    {"count": 47893,  "type": "outdoor"},
     "Objectron":   {"count": 28890,  "type": "indoor"},
     "SUNRGBD":     {"count": 13006,  "type": "indoor"},
+}
+DATASET_STATS_IMAGE_TRAIN = {
+    "ARKitScenes": {"count": 0,      "type": "indoor"},
+    "Hypersim":    {"count": 43852, "type": "indoor"},
+    "KITTI":       {"count": 2045,   "type": "outdoor"},
+    "nuScenes":    {"count": 18000,  "type": "outdoor"},
+    "Objectron":   {"count": 25703,  "type": "indoor"},
+    "SUNRGBD":     {"count": 3896,  "type": "indoor"},
 }
 
 class FeatureGeometryAug:
@@ -79,12 +88,14 @@ class FeatureGeometryAug:
             yield sample
         
 class FlattenSamples:
-    def __init__(self, dino_img_size: int = 512):
+    def __init__(self, dino_img_size: int = 512, max_cap: int = 4):
         self.dino_img_size = dino_img_size
+        self.max_cap = max_cap
     def __call__(self, samples):
         for sample in samples:
+            if not sample["targets.pth"]:
+                continue
             features = sample["feat.pth"]
-            targets_list = sample["targets.pth"]
             pad_info = sample["pad_info.pth"]
             
             pad_top, pad_left, new_h, new_w = pad_info
@@ -94,8 +105,12 @@ class FlattenSamples:
             f_metric = features["metric"].float().squeeze(0)
             f_mono = features["mono"].float().squeeze(0)
             f_dino = features["dino"].float().squeeze(0)
-        
-            for target in targets_list:
+            targets = sample["targets.pth"]
+            if len(sample["targets.pth"]) > self.max_cap:
+                selected_targets = random.sample(sample["targets.pth"], self.max_cap)
+            else:
+                selected_targets = sample["targets.pth"]
+            for target in selected_targets:
                 yield {
                     "feat_metric": f_metric,
                     "feat_mono": f_mono,
@@ -106,27 +121,34 @@ class FlattenSamples:
                     "padding_mask": padding_mask,
                 }     
             
-def get_hierarchical_weights(found_datasets):
+def get_hierarchical_weights(found_datasets, max_cap=4):
     groups = {"indoor": [], "outdoor": []}
-    
+    image_stats = DATASET_STATS_IMAGE_TRAIN
+    ann_stats = DATASET_STATS_ANN_TRAIN
     for name in found_datasets:
-        key = next((k for k in DATASET_STATS if k in name), None)
+        key = next((k for k in image_stats if k in name), None)
         if key:
-            groups[DATASET_STATS[key]["type"]].append((name, DATASET_STATS[key]["count"]))
+            img_count = image_stats[key]["count"]
+            ann_count = ann_stats[key]["count"]
+            
+            avg_ann = ann_count / max(img_count, 1)
+            expected_yield = min(avg_ann, max_cap)
+            adjusted_score = math.sqrt(img_count) / max(expected_yield, 0.5)
+            groups[image_stats[key]["type"]].append((name, adjusted_score))
     
     final_weights = {}
     group_probs = {"indoor": 0.6, "outdoor": 0.4}
     
     for g_name, datasets in groups.items():
-        datasets = [(name, count) for name, count in datasets if count > 0]
-        if not datasets: continue
+        valid_datasets = [(name, score) for name, score in datasets if score > 0]
+        if not valid_datasets: continue
         
-        raw_weights = [math.sqrt(count) for _, count in datasets]
-        total_score = sum(raw_weights)
+        scores = [score for _, score in valid_datasets]
+        total_score = sum(scores)
         
         target_prob = group_probs[g_name]
-        for (d_name, _), w in zip(datasets, raw_weights):
-            final_weights[d_name] = (w / total_score) * target_prob
+        for (d_name, score), s in zip(valid_datasets, scores):
+            final_weights[d_name] = (score / total_score) * target_prob
     
     return final_weights
 
@@ -169,7 +191,7 @@ def build_wds_feature_dataloader(
     sum_w = sum(weights)
     weights = [w / sum_w for w in weights]
     
-    transform = FlattenSamples(dino_img_size=dino_img_size)
+    transform = FlattenSamples(dino_img_size=dino_img_size, max_cap=4)
     aug_transform = None
     if split == "train":
         aug_transform = FeatureGeometryAug(cfg)
@@ -177,10 +199,11 @@ def build_wds_feature_dataloader(
     datasets = []
     for url in urls:
         ds = (wds.WebDataset(url, nodesplitter=wds.split_by_node, shardshuffle=1000, empty_check=False)
-        .shuffle(1000)
+        .repeat()
+        .shuffle(500)
         .decode("torch")
         .compose(transform)
-        .shuffle(500)
+        .shuffle(200)
         )
         if aug_transform is not None:
             ds = ds.compose(aug_transform)
@@ -194,7 +217,7 @@ def build_wds_feature_dataloader(
         
     loader = (
         wds.WebLoader(dataset, batch_size=None, shuffle=False, num_workers=num_workers,
-                      persistent_workers=False, pin_memory=True)
+                      persistent_workers=True, pin_memory=True)
         .batched(batch_size, partial=False)
         .with_epoch(batches_per_rank)
     )

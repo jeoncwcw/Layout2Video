@@ -14,24 +14,28 @@ from utils import set_seed, visualization
 
 def main():
     config = Path(SRC_BETR_DIR / "configs" / "betr_config.yaml")
-    checkpoint = Path(SRC_BETR_DIR / "checkpoints" / "betr_model_corners_v2" / "best.pth")
+    checkpoint = Path(SRC_BETR_DIR / "checkpoints" / "betr_model_corners_v3" / "best.pth")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg = OmegaConf.load(config)
     cfg.feature_mode = False
-    cfg.batch_size = 8
-    set_seed(cfg.get("seed", 41))
+    cfg.batch_size = 4
+    set_seed(cfg.get("seed", 42))
     
     print(f"Loading model from checkpoint: {checkpoint}")
     model = BETRModel(cfg).to(device)
     checkpoint = torch.load(checkpoint, map_location=device)
-    state_dict = {k.replace("module.", ""): v for k, v in checkpoint.items()}    
-    model.load_state_dict(state_dict)
+    state_dict = {k.replace("module.", ""): v for k, v in checkpoint.items()}
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        name = k.replace("_orig_mod.", "")
+        new_state_dict[name] = v
+    model.load_state_dict(new_state_dict)
     model.eval()
     
     dataset_root = Path(cfg.json_root)
     data_dir = Path(cfg.data_root)
     
-    dataloader = build_image_dataloader(root_dir=dataset_root, data_dir=data_dir, shuffle=True, seed=41, batch_size=cfg.batch_size)
+    dataloader = build_image_dataloader(root_dir=dataset_root, data_dir=data_dir, shuffle=True, seed=42, batch_size=cfg.batch_size)
     small_batch = next(iter(dataloader))
     batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in small_batch.items()}
     print(f"image_paths: {batch_gpu['path']}")
@@ -44,7 +48,7 @@ def main():
             mask=batch_gpu["padding_mask"],
         )
     # Visualization & Depth Stats
-    output_dir = PROJ_ROOT / "test" / "betr_model_corners_v2" / "inverence_vis"
+    output_dir = PROJ_ROOT / "test" / "betr_model_corners_v3" / "inference_vis"
     output_dir.mkdir(parents=True, exist_ok=True)
     visualization(small_batch, output, output_dir)
     

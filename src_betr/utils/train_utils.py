@@ -29,7 +29,7 @@ def get_scheduler(optimizer, cfg, num_batches_per_epoch):
         return 0.5 * (1.0 + math.cos(math.pi * progress))
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-def print_epoch_stats(epoch, num_epochs, train_metrics, val_metrics=None):
+def print_epoch_stats(epoch, num_epochs, train_metrics, val_metrics=None, ema_metrics=None):
     print("\n" + "="*85)
     print(f" 📊 Epoch [{epoch+1:03d}/{num_epochs:03d}] Summary")
     print("-" * 85)
@@ -44,6 +44,9 @@ def print_epoch_stats(epoch, num_epochs, train_metrics, val_metrics=None):
     if val_metrics:
         v = val_metrics
         print(f" {'Validation':<10} | {v['total_loss']:.4f}   | {v['loss_corners']:.4f}   | {v['loss_depths']:.4f}")
+    if ema_metrics:
+        e = ema_metrics
+        print(f" {'EMA Val':<10} | {e['total_loss']:.4f}   | {e['loss_corners']:.4f}   | {e['loss_depths']:.4f}")
     print("="*85 + "\n")
     
 def visualize_heatmaps(heatmaps, pred_coords_128, gt_coords_128, save_path):
