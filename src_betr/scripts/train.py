@@ -7,8 +7,6 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from pathlib import Path
 from omegaconf import OmegaConf
-from tqdm import tqdm
-from collections import defaultdict
 import sys
 from timm.utils import ModelEmaV2
 
@@ -19,7 +17,7 @@ sys.path.insert(0, str(SRC_ROOT))
 from models.betr import BETRModel
 from losses.criterion import BETRLoss
 from data.wds_dataloader import build_wds_feature_dataloader
-from utils import set_seed, reduce_dict, print_epoch_stats, visualize_heatmaps, get_scheduler
+from utils import set_seed, print_epoch_stats, train_one_epoch, evaluate, get_scheduler, CornerGeometryMetric
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -81,149 +79,63 @@ def train_worker(rank, world_size, cfg):
         train_dataloader, aug_obj = build_wds_feature_dataloader(**total_data_kwargs, split="train", epoch_length=cfg.epoch_length)
         val_dataloader, _ = build_wds_feature_dataloader(**total_data_kwargs, split="val", epoch_length=cfg.epoch_length//10)
         
-        best_val_loss = float('inf')
+        best_dist_metric = float('inf')
         if rank == 0:   
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
             print("=" * 50)
             print(f"Starting training for {num_epochs} epochs...")
             print("=" * 50)
         scaler = torch.amp.GradScaler('cuda')
+        val_metric = CornerGeometryMetric(device=device)
+        ema_metric = CornerGeometryMetric(device=device)
         
         for epoch in range(num_epochs):
             if aug_obj is not None:
                 aug_obj.set_epoch(epoch)
             # Training phase
-            model.train()
-            train_meter = defaultdict(float)
-            train_num_samples = 0
-            iterator = train_dataloader
-            if rank == 0:
-                iterator = tqdm(train_dataloader, desc=f"Epoch [{epoch+1}/{num_epochs}] Training", leave=True, total=num_batches_per_epoch)
-            for i, batch in enumerate(iterator):
-                # if i % 500 == 0:
-                #     import gc
-                #     gc.collect()
-                #     torch.cuda.empty_cache()
-                batch_gpu = {k: v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-                with torch.amp.autocast('cuda'):
-                    outputs = model(
-                        bbx2d_tight=batch_gpu["2d_bbx"],
-                        mask=batch_gpu["padding_mask"],
-                        f_metric=batch_gpu["feat_metric"],
-                        f_mono=batch_gpu["feat_mono"],
-                        f_dino=batch_gpu["feat_dino"],
-                    )
-                    loss_dict = criterion(outputs, batch_gpu)
-                    total_loss = loss_dict["total_loss"] / cfg["grad_accum_steps"]
-                scaler.scale(total_loss).backward()
-                if (i + 1) % cfg["grad_accum_steps"] == 0:
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad(set_to_none=True)
-                    model_ema.update(model)
-                    scheduler.step()
-                with torch.no_grad():
-                    for k, v in loss_dict.items():
-                        train_meter[k] += v.item() * batch_gpu["2d_bbx"].size(0)
-                    train_num_samples += batch_gpu["2d_bbx"].size(0)
-                if rank == 0:
-                    iterator.set_postfix(loss=f"{total_loss.item():.4f}")
-            
-            try:
-                dist.barrier(device_ids=[rank])
-            except:
-                dist.barrier()
-            # Train metric
-            local_avg_metrics = {k: v / train_num_samples for k, v in train_meter.items()}
-            train_avg_metrics = reduce_dict(local_avg_metrics, world_size, average=True)
+            train_metrics = train_one_epoch(
+                model=model, model_ema=model_ema,
+                train_dataloader=train_dataloader,
+                rank=rank, epoch=epoch, num_batches_per_epoch=num_batches_per_epoch,
+                device=device, criterion=criterion,
+                grad_accum_steps=cfg.get("grad_accum_steps", 1),
+                scaler=scaler, optimizer=optimizer, scheduler=scheduler,
+                world_size=world_size,
+            )
             
             # Validation phase
-            global_val_metrics = None
-            global_ema_metrics = None
+            global_val_loss, global_ema_loss, global_val_dists, global_ema_dists = (None, None, None, None)
             if (epoch+1) % cfg.get("val_interval", 1) == 0:
-                model.eval()
-                model_ema.module.eval()
-                torch.cuda.empty_cache()
+                global_val_loss, global_ema_loss, global_val_dists, global_ema_dists = evaluate(
+                    model=model, model_ema=model_ema,
+                    val_metric=val_metric, ema_metric=ema_metric,
+                    rank=rank,
+                    epoch=epoch,
+                    val_dataloader=val_dataloader,
+                    device=device,
+                    criterion=criterion,
+                    world_size=world_size,
+                    vis_dir=vis_dir,
+                )
                 
-                val_meter = defaultdict(float)
-                ema_meter = defaultdict(float)
-                val_num_samples = 0
-                if rank == 0:
-                    print(f"Starting validation for Epoch {epoch+1}...")
-                
-                with torch.inference_mode():
-                    for i, val_batch in enumerate(val_dataloader):
-                        val_batch_gpu = {k: v.to(device, non_blocking=True) if isinstance(v, torch.Tensor) else v for k, v in val_batch.items()}
-                        val_outputs = model(
-                            bbx2d_tight=val_batch_gpu["2d_bbx"],
-                            mask=val_batch_gpu["padding_mask"],
-                            f_metric=val_batch_gpu["feat_metric"],
-                            f_mono=val_batch_gpu["feat_mono"],
-                            f_dino=val_batch_gpu["feat_dino"],
-                        )
-                        ema_outputs = model_ema.module(
-                            bbx2d_tight=val_batch_gpu["2d_bbx"],
-                            mask=val_batch_gpu["padding_mask"],
-                            f_metric=val_batch_gpu["feat_metric"],
-                            f_mono=val_batch_gpu["feat_mono"],
-                            f_dino=val_batch_gpu["feat_dino"],
-                        )
-                        val_loss_dict = criterion(val_outputs, val_batch_gpu)
-                        ema_loss_dict = criterion(ema_outputs, val_batch_gpu)
-                        for k in val_loss_dict.keys():
-                            val_meter[k] += val_loss_dict[k].item() * val_batch_gpu["2d_bbx"].size(0)    
-                            ema_meter[k] += ema_loss_dict[k].item() * val_batch_gpu["2d_bbx"].size(0)
-                        val_num_samples += val_batch_gpu["2d_bbx"].size(0)
-                        if rank ==0 and i == 0:
-                            h_maps = val_outputs['corner heatmaps'][0]  # [8, 128, 128]
-                            p_coords_128 = val_outputs['corner coords'][0] / 4.0
-                            g_coords_128 = val_batch['gt_corners'][0] * 128.0
-                            
-                            h_ema_maps = ema_outputs['corner heatmaps'][0]  # [8, 128, 128]
-                            p_ema_coords_128 = ema_outputs['corner coords'][0] / 4.0
-                            g_ema_coords_128 = val_batch['gt_corners'][0] * 128.0
-                            
-                            val_save_name = vis_dir / f"epoch_{epoch+1:03d}_val.png"
-                            ema_save_name = vis_dir / f"epoch_{epoch+1:03d}_ema.png"
-                            
-                            vis_dir.mkdir(parents=True, exist_ok=True)
-                            visualize_heatmaps(h_maps, p_coords_128, g_coords_128, val_save_name)
-                            print(f"Saved heatmap visualization to {val_save_name}")
-                            visualize_heatmaps(h_ema_maps, p_ema_coords_128, g_ema_coords_128, ema_save_name)
-                            print(f"Saved heatmap visualization to {ema_save_name}")
-                try:
-                    dist.barrier(device_ids=[rank])
-                except:
-                    dist.barrier()
-                
-                total_samples_tensor = torch.tensor([val_num_samples], device=device)
-                dist.all_reduce(total_samples_tensor, op=dist.ReduceOp.SUM)
-                total_val_samples = total_samples_tensor.item()
-                
-                if total_val_samples > 0:
-                    local_sum_metrics = {k: v for k, v in val_meter.items()}
-                    local_ema_metrics = {k: v for k, v in ema_meter.items()}
-                    global_sum_metrics = reduce_dict(local_sum_metrics, world_size, average=False)
-                    global_ema_metrics = reduce_dict(local_ema_metrics, world_size, average=False)
-                    global_val_metrics = {k: v / total_val_samples for k, v in global_sum_metrics.items()}
-                    global_ema_metrics = {k: v / total_val_samples for k, v in global_ema_metrics.items()}
-                else:
-                    if rank == 0:
-                        print("⚠️ No validation samples found!")
-                    
+            # Logging and checkpointing
             if rank == 0:
-                print_epoch_stats(epoch, num_epochs, train_avg_metrics, global_val_metrics, global_ema_metrics)
-                if global_val_metrics:
-                    current_val_loss = global_val_metrics["total_loss"]
-                    current_ema_loss = global_ema_metrics["total_loss"]
-                    if current_val_loss < best_val_loss or current_ema_loss < best_val_loss:
-                        best_val_loss = min(current_val_loss, current_ema_loss)
-                        checkpoint_path = checkpoint_dir / f"best.pth"
-                        if current_ema_loss < current_val_loss:
+                print_epoch_stats(epoch, num_epochs, train_metrics, global_val_loss, global_ema_loss)
+                if global_val_loss:
+                    print("---- Validation Corner Geometry Metrics ----")
+                    print(f"Standard Model - Average UV Error: {global_val_dists['avg_uv']:.4f} px, Average Depth Error: {global_val_dists['avg_depth']:.4f} meters")
+                    print(f"EMA Model      - Average UV Error: {global_ema_dists['avg_uv']:.4f} px, Average Depth Error: {global_ema_dists['avg_depth']:.4f} meters")
+                    print("--------------------------------------------")
+                    # Checkpointing based on metric
+                    min_score = min(global_val_dists['mixed_error'], global_ema_dists['mixed_error'])
+                    if min_score < best_dist_metric:
+                        checkpoint_path = checkpoint_dir / f"best_dist.pth"
+                        if global_ema_dists['mixed_error'] < global_val_dists['mixed_error']:
                             torch.save(model_ema.module.state_dict(), checkpoint_path)
                         else:
                             torch.save(model.module.state_dict(), checkpoint_path)
-                        print(f"Saved best model with val loss {best_val_loss:.4f} at {checkpoint_path}")
+                        print(f"Saved best distance metric model with mixed error {min_score:.4f} at {checkpoint_path}")
+                # Regular checkpointing
                 if (epoch + 1) % cfg.get("save_interval", 5) == 0:
                     checkpoint_path = checkpoint_dir / f"epoch{epoch+1:03d}.pth"
                     torch.save(model.module.state_dict(), checkpoint_path)

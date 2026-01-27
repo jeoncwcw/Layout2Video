@@ -10,16 +10,16 @@ sys.path.insert(0, str(SRC_BETR_DIR))
 
 from models.betr import BETRModel
 from data.image_dataloader import build_image_dataloader
-from utils import set_seed, visualization
+from utils import set_seed, visualization, CornerGeometryMetric
 
 def main():
     config = Path(SRC_BETR_DIR / "configs" / "betr_config.yaml")
-    checkpoint = Path(SRC_BETR_DIR / "checkpoints" / "betr_model_corners_v3" / "best.pth")
+    checkpoint = Path(SRC_BETR_DIR / "checkpoints" / "betr_model_corners_v4" / "epoch100.pth")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cfg = OmegaConf.load(config)
     cfg.feature_mode = False
-    cfg.batch_size = 4
-    set_seed(cfg.get("seed", 42))
+    cfg.batch_size = 12
+    set_seed(cfg.get("seed", 40))
     
     print(f"Loading model from checkpoint: {checkpoint}")
     model = BETRModel(cfg).to(device)
@@ -31,11 +31,12 @@ def main():
         new_state_dict[name] = v
     model.load_state_dict(new_state_dict)
     model.eval()
+    metric = CornerGeometryMetric(device=device)
     
     dataset_root = Path(cfg.json_root)
     data_dir = Path(cfg.data_root)
     
-    dataloader = build_image_dataloader(root_dir=dataset_root, data_dir=data_dir, shuffle=True, seed=42, batch_size=cfg.batch_size)
+    dataloader = build_image_dataloader(root_dir=dataset_root, data_dir=data_dir, shuffle=True, seed=40, batch_size=cfg.batch_size)
     small_batch = next(iter(dataloader))
     batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in small_batch.items()}
     print(f"image_paths: {batch_gpu['path']}")
@@ -47,11 +48,15 @@ def main():
             bbx2d_tight=batch_gpu["2d_bbx"],
             mask=batch_gpu["padding_mask"],
         )
+        metric.update(output, batch_gpu)
+    avg_uv, avg_d = metric.compute()
     # Visualization & Depth Stats
-    output_dir = PROJ_ROOT / "test" / "betr_model_corners_v3" / "inference_vis"
+    output_dir = PROJ_ROOT / "test" / "betr_model_corners_v4" / "inference_vis"
     output_dir.mkdir(parents=True, exist_ok=True)
     visualization(small_batch, output, output_dir)
-    
+    print("==== Inference Results ====")
+    print(f"Average UV Error: {avg_uv:.4f} px")
+    print(f"Average Depth Error: {avg_d:.4f} meters")
     
 if __name__ == "__main__":
     main()

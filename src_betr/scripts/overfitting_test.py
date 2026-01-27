@@ -8,9 +8,7 @@ import sys
 BETR_ROOT = Path(__file__).resolve().parents[1]
 PROJ_ROOT = BETR_ROOT.parent
 sys.path.insert(0, str(BETR_ROOT))
-from models.betr_v2 import BETRModel2
 from models.betr import BETRModel
-from losses.criterion_v2 import BETRv2Loss
 from losses.criterion import BETRLoss
 from data.image_dataloader import build_image_dataloader
 from utils import set_seed, visualization, visualize_heatmaps

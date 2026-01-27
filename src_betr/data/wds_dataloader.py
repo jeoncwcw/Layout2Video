@@ -9,17 +9,17 @@ import random
 DATASET_STATS_ANN_TRAIN = {
     "ARKitScenes": {"count": 0,      "type": "indoor"},
     "Hypersim":    {"count": 264154, "type": "indoor"},
-    "KITTI":       {"count": 4435,   "type": "outdoor"},
-    "nuScenes":    {"count": 47893,  "type": "outdoor"},
-    "Objectron":   {"count": 28890,  "type": "indoor"},
+    "KITTI":       {"count": 4435,   "type": "urban"},
+    "nuScenes":    {"count": 47893,  "type": "urban"},
+    "Objectron":   {"count": 28890,  "type": "general"},
     "SUNRGBD":     {"count": 13006,  "type": "indoor"},
 }
 DATASET_STATS_IMAGE_TRAIN = {
     "ARKitScenes": {"count": 0,      "type": "indoor"},
     "Hypersim":    {"count": 43852, "type": "indoor"},
-    "KITTI":       {"count": 2045,   "type": "outdoor"},
-    "nuScenes":    {"count": 18000,  "type": "outdoor"},
-    "Objectron":   {"count": 25703,  "type": "indoor"},
+    "KITTI":       {"count": 2045,   "type": "urban"},
+    "nuScenes":    {"count": 18000,  "type": "urban"},
+    "Objectron":   {"count": 25703,  "type": "general"},
     "SUNRGBD":     {"count": 3896,  "type": "indoor"},
 }
 
