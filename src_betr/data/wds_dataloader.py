@@ -105,7 +105,6 @@ class FlattenSamples:
             f_metric = features["metric"].float().squeeze(0)
             f_mono = features["mono"].float().squeeze(0)
             f_dino = features["dino"].float().squeeze(0)
-            targets = sample["targets.pth"]
             if len(sample["targets.pth"]) > self.max_cap:
                 selected_targets = random.sample(sample["targets.pth"], self.max_cap)
             else:
@@ -121,10 +120,10 @@ class FlattenSamples:
                     "padding_mask": padding_mask,
                 }     
             
-def get_hierarchical_weights(found_datasets, max_cap=4):
-    groups = {"indoor": [], "outdoor": []}
+def get_balanced_weights(found_datasets, max_cap=4):
     image_stats = DATASET_STATS_IMAGE_TRAIN
     ann_stats = DATASET_STATS_ANN_TRAIN
+    raw_scores = {}
     for name in found_datasets:
         key = next((k for k in image_stats if k in name), None)
         if key:
@@ -133,22 +132,10 @@ def get_hierarchical_weights(found_datasets, max_cap=4):
             
             avg_ann = ann_count / max(img_count, 1)
             expected_yield = min(avg_ann, max_cap)
-            adjusted_score = math.sqrt(img_count) / max(expected_yield, 0.5)
-            groups[image_stats[key]["type"]].append((name, adjusted_score))
-    
-    final_weights = {}
-    group_probs = {"indoor": 0.6, "outdoor": 0.4}
-    
-    for g_name, datasets in groups.items():
-        valid_datasets = [(name, score) for name, score in datasets if score > 0]
-        if not valid_datasets: continue
-        
-        scores = [score for _, score in valid_datasets]
-        total_score = sum(scores)
-        
-        target_prob = group_probs[g_name]
-        for (d_name, score), s in zip(valid_datasets, scores):
-            final_weights[d_name] = (score / total_score) * target_prob
+            score = math.sqrt(img_count) / max(expected_yield, 0.5)
+            raw_scores[name] = score
+    total_score = sum(raw_scores.values())
+    final_weights = {k: v / total_score for k, v in raw_scores.items()}
     
     return final_weights
 
@@ -170,7 +157,7 @@ def build_wds_feature_dataloader(
         raise ValueError(f"No WDS dataset found in {wds_root} for split {split}")
     found_dataset_names = [d.name for d in dataset_dirs]
     
-    weight_map = get_hierarchical_weights(found_dataset_names)
+    weight_map = get_balanced_weights(found_dataset_names)
     print(f"WDS Dataloader - Using datasets and weights: {weight_map}")
     urls = []
     weights = []    

@@ -35,7 +35,6 @@ class BETRModel(nn.Module):
                 checkpoint_path=Path(cfg.dinov3_checkpoint_path),
                 device=cfg.device,
             )
-            self.feature_dropout = nn.Dropout2d(p = cfg.aug.feature_dropout)
         else:
             print("[Feature Mode] Skipping Backbone Loading ...")
             self.feature_monodepth = None
@@ -93,8 +92,8 @@ class BETRModel(nn.Module):
         # # Augmentation parameters
         self.box_jitter_sigma = cfg.aug.box_jitter_sigma
         self.feature_noise_sigma = cfg.aug.feature_noise_sigma
-        self.feature_dropout = nn.Dropout2d(p = cfg.aug.feature_dropout)
-
+        self.token_mask_prob = cfg.aug.token_mask_prob
+        
     def forward(self, bbx2d_tight, mask = None,
                 images_da3 = None, images_dino = None,
                 f_metric = None, f_mono = None, f_dino = None,
@@ -114,15 +113,14 @@ class BETRModel(nn.Module):
         except RuntimeError as e:
             print("RuntimeError in feature extraction:", e)
             raise e
-        # if self.training and self.feature_noise_sigma > 0:
-        #     noise = torch.randn_like(bbx2d_tight) * self.box_jitter_sigma
-        #     bbx2d_tight = torch.clamp(bbx2d_tight + noise, 0, 1)
-        #     metric_depth = metric_depth + torch.randn_like(metric_depth) * self.feature_noise_sigma
-        #     mono_depth = mono_depth + torch.randn_like(mono_depth) * self.feature_noise_sigma
-        #     dinov3_features = dinov3_features + torch.randn_like(dinov3_features) * self.feature_noise_sigma     
         combined_features = self.feature_generator(metric_depth, mono_depth, dinov3_features) # [B, ]
+        if self.training:
+            masking_ratio = getattr(self, 'token_mask_prob', 0.1)
+            if masking_ratio > 0.0:
+                B, C, H, W = combined_features.shape
+                random_mask = torch.rand(B, 1, H, W, device=combined_features.device) > masking_ratio
+                combined_features = combined_features * random_mask / (1.0 - masking_ratio)
         skip_feature = self.skip_projection(combined_features)  # For potential skip connections
-        combined_features = self.feature_dropout(combined_features)
         
         # Add positional encoding
         combined_features = self.conv1x1(combined_features)

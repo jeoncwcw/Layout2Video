@@ -19,6 +19,7 @@ def train_one_epoch(
     world_size: int,
 ):
     model.train()
+    criterion.set_epoch(epoch)
     train_meter = defaultdict(float)
     train_num_samples = 0
     iterator = train_dataloader

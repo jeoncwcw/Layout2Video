@@ -11,7 +11,7 @@ sys.path.insert(0, str(BETR_ROOT))
 from models.betr import BETRModel
 from losses.criterion import BETRLoss
 from data.image_dataloader import build_image_dataloader
-from utils import set_seed, visualization, visualize_heatmaps
+from utils import set_seed, visualization, visualize_heatmaps, CornerGeometryMetric
 
 
 def run_overfitting_test():
@@ -27,8 +27,12 @@ def run_overfitting_test():
     cfg.batch_size = 4
     model = BETRModel(cfg).to(device)
     criterion = BETRLoss(
-        lambda_fine=cfg.loss_weights.lambda_,
+        start_lambda_fine=cfg.loss_weights.start_lambda_,
+        end_lambda_fine=cfg.loss_weights.end_lambda_,
         loss_depth=cfg.loss_weights.depth,
+        start_peak = cfg.loss_weights.start_peak,
+        end_peak = cfg.loss_weights.end_peak,
+        total_epochs = 300,
     ).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
     
@@ -43,11 +47,13 @@ def run_overfitting_test():
     small_batch = next(iter(dataloader))
     batch_gpu = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in small_batch.items()}
     print("Starting training loop to overfit on the small batch...")
+    metric = CornerGeometryMetric()
     
     model.train()
     start_time = time.time()
     
     for epoch in range(1, 301):
+        criterion.set_epoch(epoch)
         optimizer.zero_grad()
         outputs = model(
             images_dino = batch_gpu["image_dino"],
@@ -83,16 +89,16 @@ def run_overfitting_test():
             bbx2d_tight = batch_gpu["2d_bbx"],
             mask = batch_gpu["padding_mask"],
         )
+        metric.update(outputs, batch_gpu)
         idx = 0 
         h_maps = outputs['corner heatmaps'][idx] # [8, 128, 128]
-        
         p_coords_128 = outputs['corner coords'][idx] / 4.0 
-        
         g_coords_128 = small_batch['gt_corners'][idx] * 128.0
-        
         save_name = vis_dir / f"epoch_{epoch+1:03d}_feat_vis.png"
         visualize_heatmaps(h_maps, p_coords_128, g_coords_128, save_name)
         print(f"📸 [Rank 0] Feature-base heatmap saved: {save_name}")
+    uv_dist, d_dist, score = metric.compute()
+    print(f"Final Overfitting Metrics - Average UV Error: {uv_dist:.4f} px, Average Depth Error: {d_dist:.4f} meters, Mixed Score: {score:.4f}")
     return small_batch, outputs
 
         

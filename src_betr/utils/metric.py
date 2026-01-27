@@ -64,13 +64,13 @@ class CornerGeometryMetric:
         total_corners = self.total_samples * 8
         avg_uv_error = self.total_uv_dist / total_corners
         avg_depth_error = self.total_depth_diff / total_corners
-        return avg_uv_error, avg_depth_error
+        return avg_uv_error, avg_depth_error, avg_uv_error + avg_depth_error * 5.0
     
     def get_result_dict(self):
-        avg_uv, avg_d = self.compute()
+        avg_uv, avg_d, mixed_score = self.compute()
         return {
             "avg_uv_error": avg_uv,
             "avg_depth_error": avg_d,
-            "mixed_error": avg_uv + avg_d * 5.0,
+            "mixed_score": mixed_score,
         }
         

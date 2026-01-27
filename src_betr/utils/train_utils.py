@@ -82,3 +82,26 @@ def visualize_heatmaps(heatmaps, pred_coords_128, gt_coords_128, save_path):
     plt.tight_layout()
     plt.savefig(save_path, bbox_inches='tight', pad_inches=0.1)
     plt.close()
+    
+def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=None, get_layer_scale=None):
+    parameter_group_names = {}
+    parameter_group_vars = {}
+
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue  # frozen weights
+        if len(param.shape) == 1 or name.endswith(".bias") or "position_encoding" in name or "box_embedding" in name or name in skip_list:
+            group_name = "no_decay"
+            this_weight_decay = 0.0
+        else:
+            group_name = "decay"
+            this_weight_decay = weight_decay
+
+        if group_name not in parameter_group_vars:
+            parameter_group_vars[group_name] = {"params": [], "weight_decay": this_weight_decay}
+            parameter_group_names[group_name] = []
+
+        parameter_group_vars[group_name]["params"].append(param)
+        parameter_group_names[group_name].append(name)
+
+    return list(parameter_group_vars.values())

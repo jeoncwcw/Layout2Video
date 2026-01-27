@@ -10,7 +10,7 @@ data_root: "datasets/"
 
 # System
 device: "cuda"
-model_name: "betr_model_corners_v4" # Model with Z-Score and Increasing lambda of fine loss
+model_name: "betr_model_corners_v5" # Model with Z-Score and Increasing lambda of fine loss
 seed: 42
   
 # Data
@@ -23,8 +23,8 @@ epoch_length: 50000
 
 aug:
   box_jitter_sigma: 1e-3
-  feature_noise_sigma: 1e-2
-  feature_dropout: 0.1
+  feature_noise_sigma: 5e-3
+  token_mask_prob: 0.1
   flip_prob: 0.2
   rot_range: 5.0
 
@@ -50,13 +50,13 @@ soft_argmax:
 encoder:
   nhead: 8
   dim_feedforward: 1024
-  num_layers: 6
+  num_layers: 3
 
 # Transformer Decoder Config
 decoder:
   nhead: 8
   dim_feedforward: 1024
-  num_layers: 6
+  num_layers: 3
 
 # Positional Encoding Config
 position_encoding:
@@ -71,21 +71,20 @@ box_embedding:
 
 # Loss configs
 loss_weights:
-  lambda_: 5.0 # Weights for fine loss
+  start_lambda_: 5.0 # Weights for fine loss
+  end_lambda_: 10.0
   depth: 1.0 # heatmap std
-loss_v2_weights:
-  center: 1.0
-  offset: 1.0
-  depth: 1.0
-  d_offset: 1.0
+  start_peak: 200.0 # initial peak weight for coarse loss
+  end_peak: 20.0    # final peak weight for coarse loss
+
 # Hyperparameters
-# maintain grad_accum_steps * batch_size * world_size = 48
+# maintain grad_accum_steps * batch_size * world_size = 96
 num_epochs: 100
 warmup_epochs: 5
 grad_accum_steps: 2
-batch_size: 8
+batch_size: 16
 learning_rate: 1e-4
-weight_decay: 1e-4
+weight_decay: 1e-3
 num_workers: 2
 
 # Validation and Logging

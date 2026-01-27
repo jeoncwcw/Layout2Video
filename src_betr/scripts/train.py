@@ -17,7 +17,7 @@ sys.path.insert(0, str(SRC_ROOT))
 from models.betr import BETRModel
 from losses.criterion import BETRLoss
 from data.wds_dataloader import build_wds_feature_dataloader
-from utils import set_seed, print_epoch_stats, train_one_epoch, evaluate, get_scheduler, CornerGeometryMetric
+from utils import set_seed, print_epoch_stats, train_one_epoch, evaluate, get_scheduler, CornerGeometryMetric, get_parameter_groups
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -59,10 +59,15 @@ def train_worker(rank, world_size, cfg):
         
         # Learning components
         criterion = BETRLoss(
-            lambda_fine=cfg.loss_weights.lambda_,
+            start_lambda_fine=cfg.loss_weights.start_lambda_,
+            end_lambda_fine=cfg.loss_weights.end_lambda_,
+            loss_depth=cfg.loss_weights.depth,
+            start_peak = cfg.loss_weights.start_peak,
+            end_peak = cfg.loss_weights.end_peak,
+            total_epochs = num_epochs,
         ).to(device)
         optimizer = optim.AdamW(
-            model.parameters(),
+            get_parameter_groups(model, weight_decay=cfg.weight_decay),
             lr=cfg.learning_rate,
             weight_decay=cfg.weight_decay
         )
@@ -123,14 +128,15 @@ def train_worker(rank, world_size, cfg):
                 print_epoch_stats(epoch, num_epochs, train_metrics, global_val_loss, global_ema_loss)
                 if global_val_loss:
                     print("---- Validation Corner Geometry Metrics ----")
-                    print(f"Standard Model - Average UV Error: {global_val_dists['avg_uv']:.4f} px, Average Depth Error: {global_val_dists['avg_depth']:.4f} meters")
-                    print(f"EMA Model      - Average UV Error: {global_ema_dists['avg_uv']:.4f} px, Average Depth Error: {global_ema_dists['avg_depth']:.4f} meters")
+                    print(f"Standard Model - Average UV Error: {global_val_dists['avg_uv_error']:.4f} px, Average Depth Error: {global_val_dists['avg_depth_error']:.4f} meters")
+                    print(f"EMA Model      - Average UV Error: {global_ema_dists['avg_uv_error']:.4f} px, Average Depth Error: {global_ema_dists['avg_depth_error']:.4f} meters")
                     print("--------------------------------------------")
                     # Checkpointing based on metric
-                    min_score = min(global_val_dists['mixed_error'], global_ema_dists['mixed_error'])
+                    min_score = min(global_val_dists['mixed_score'], global_ema_dists['mixed_score'])
                     if min_score < best_dist_metric:
+                        best_dist_metric = min_score
                         checkpoint_path = checkpoint_dir / f"best_dist.pth"
-                        if global_ema_dists['mixed_error'] < global_val_dists['mixed_error']:
+                        if global_ema_dists['mixed_score'] < global_val_dists['mixed_score']:
                             torch.save(model_ema.module.state_dict(), checkpoint_path)
                         else:
                             torch.save(model.module.state_dict(), checkpoint_path)
